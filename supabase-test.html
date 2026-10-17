@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karaoke Cloud Login</title>
+<style>
+body { font-family: Arial; padding: 25px; text-align: center; }
+input, button { display: block; width: 100%; box-sizing: border-box; padding: 15px; margin: 12px 0; font-size: 18px; }
+</style>
+</head>
+<body>
+<h2>Karaoke Cloud Login</h2>
+<input id="email" type="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<button id="login">Connect to Supabase</button>
+<p id="status">Not connected</p>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+const client = window.supabase.createClient(
+  'https://vifemcedezouvuayplun.supabase.co',
+  'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT'
+);
+
+document.getElementById('login').onclick = async () => {
+  const status = document.getElementById('status');
+  status.textContent = 'Connecting...';
+
+  const { data, error } = await client.auth.signInWithPassword({
+    email: document.getElementById('email').value.trim(),
+    password: document.getElementById('password').value
+  });
+
+  document.getElementById('password').value = '';
+
+  status.textContent = error
+    ? 'Login failed: ' + error.message
+    : 'AUTHORIZED - Supabase connected';
+};
+</script>
+</body>
+</html>
