@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html, body, #player {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: black;
+}
+</style>
+</head>
+<body>
+<div id="player"></div>
+
+<script>
+let player;
+
+function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+        videoId: 'M7lc1UVf-VE',
+        playerVars: { playsinline: 1 },
+        events: {
+            onReady: () => console.log('YouTube player ready'),
+            onError: e => console.error('YouTube error:', e.data)
+        }
+    });
+}
+
+// Receive commands only from the embedding parent window.
+window.addEventListener('message', event => {
+    if (event.source !== window.parent) return;
+    if (event.origin !== 'file://') return;
+
+    const msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (!player || typeof player.loadVideoById !== 'function') return;
+
+    if (msg.type === 'load_youtube' &&
+        typeof msg.videoId === 'string' &&
+        /^[a-zA-Z0-9_-]{11}$/.test(msg.videoId)) {
+        player.loadVideoById(msg.videoId);
+    }
+
+    if (msg.type === 'command') {
+        if (msg.action === 'play') player.playVideo();
+        if (msg.action === 'pause') player.pauseVideo();
+    }
+});
+
+const script = document.createElement('script');
+script.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(script);
+</script>
+</body>
+</html>
