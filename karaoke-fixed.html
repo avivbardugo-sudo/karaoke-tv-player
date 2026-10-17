@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karaoke Cloud Remote</title>
+<style>
+:root { color-scheme:dark; font-family:system-ui,Arial; } body{background:#111827;color:#f9fafb;margin:auto;max-width:680px;padding:18px}
+h1{margin:12px 0 5px} p{line-height:1.4} section{background:#1f2937;padding:14px;margin:14px 0;border-radius:14px}
+input,button{box-sizing:border-box;border:1px solid #566378;border-radius:9px;padding:13px;font-size:17px;background:#111827;color:white;min-height:46px}
+input{width:100%;margin:6px 0} button{background:#374151;margin:4px} button.main{background:#126d52} button:disabled{opacity:.45}
+.row{display:flex;gap:5px;flex-wrap:wrap} .row>*{flex:1} #message{color:#a7f3d0;min-height:3em;white-space:pre-wrap}
+.song{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #455166;padding:8px 0}
+.song span{overflow-wrap:anywhere;flex:1} a{color:#93c5fd} small{color:#cbd5e1}
+</style>
+</head>
+<body>
+<h1>🎤 Karaoke Cloud</h1>
+<p>שליטה בטלוויזיה דרך Supabase — בלי שרת Ubuntu</p>
+<section id="loginPanel"><h2>כניסה</h2><input id="email" type="email" autocomplete="email" placeholder="Email" dir="ltr"><input id="password" type="password" autocomplete="current-password" placeholder="Password" dir="ltr"><button id="loginBtn" class="main">התחבר</button></section>
+<section id="controls" hidden>
+  <div class="row"><button id="logoutBtn">התנתק</button><button id="pauseBtn">⏸ השהה</button><button id="resumeBtn">▶ המשך</button><button id="nextBtn">⏭ הבא בתור</button></div>
+  <h2>ניגון שיר</h2>
+  <input id="videoInput" dir="ltr" placeholder="קישור YouTube או מזהה סרטון בן 11 תווים">
+  <input id="titleInput" placeholder="שם השיר (לא חובה)">
+  <div class="row"><button id="playBtn" class="main">▶ נגן עכשיו</button><button id="addBtn">+ הוסף לתור</button></div>
+  <small>חיפוש: <a href="https://www.youtube.com/results?search_query=karaoke" target="_blank" rel="noopener noreferrer">פתח YouTube לחיפוש שירים</a>, העתק את קישור הסרטון והדבק כאן.</small>
+  <h2>תור שירים <small>(נשמר באייפון זה בלבד)</small></h2>
+  <div id="queue"></div>
+  <button id="clearBtn">נקה תור</button>
+  <h2>צימוד טלוויזיה</h2><input id="pairCode" maxlength="10" placeholder="קוד שמופיע בטלוויזיה" dir="ltr"><button id="pairBtn">אשר טלוויזיה</button>
+</section>
+<p id="message" role="status" aria-live="polite">טוען...</p>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+(function(){
+'use strict';
+var SUPABASE_URL='https://vifemcedezouvuayplun.supabase.co';
+var KEY='sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
+var $=function(id){return document.getElementById(id)};
+var client;
+var queue=[];
+function say(s){$('message').textContent=s}
+function loadQueue(){try{var q=JSON.parse(localStorage.getItem('karaoke_iphone_queue_v1')||'[]');if(Array.isArray(q))queue=q.filter(function(x){return x && /^[\w-]{11}$/.test(x.id)}).slice(0,100)}catch(e){queue=[]}}
+function saveQueue(){localStorage.setItem('karaoke_iphone_queue_v1',JSON.stringify(queue));renderQueue()}
+function renderQueue(){var el=$('queue');el.textContent='';if(!queue.length){el.textContent='התור ריק';return;}queue.forEach(function(song,i){var row=document.createElement('div');row.className='song';var txt=document.createElement('span');txt.textContent=(i+1)+'. '+song.title;var b=document.createElement('button');b.textContent='הסר';b.onclick=function(){queue.splice(i,1);saveQueue()};row.appendChild(txt);row.appendChild(b);el.appendChild(row)})}
+function videoId(v){v=(v||'').trim();if(/^[\w-]{11}$/.test(v))return v;try{var u=new window.URL(v);if(u.hostname==='youtu.be'||u.hostname==='www.youtu.be')v=u.pathname.split('/')[1];else if(['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com'].includes(u.hostname)){v=u.searchParams.get('v')||((u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/))||[])[1];}else return null;return /^[\w-]{11}$/.test(v||'')?v:null}catch(e){return null}}
+function currentSong(){var id=videoId($('videoInput').value);if(!id){say('קישור YouTube לא תקין');return null}return {id:id,title:$('titleInput').value.trim()||id}}
+async function send(command,id){var sess=await client.auth.getSession();if(!sess.data.session){showAuth(false);throw Error('יש להתחבר שוב')}var body={action:'send',command:command};if(id)body.video_id=id;var result=await client.functions.invoke('karaoke-pairing',{body:body});if(result.error){var detail=result.error.message;if(result.error.context&&result.error.context.json){try{detail=JSON.stringify(await result.error.context.json())}catch(e){}}throw Error(detail)}if(!result.data||result.data.status!=='QUEUED')throw Error('תשובה לא צפויה');return result.data}
+async function command(cmd,id){try{say('שולח לטלוויזיה...');var r=await send(cmd,id);say('נשלח לטלוויזיה. Command #'+r.command_id)}catch(e){say('שגיאה: '+e.message)}}
+function showAuth(ok){$('loginPanel').hidden=!!ok;$('controls').hidden=!ok;say(ok?'מחובר — מוכן לניגון':'יש להתחבר')}
+$('loginBtn').onclick=async function(){say('מתחבר...');try{var r=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('password').value='';if(r.error)throw r.error;showAuth(true)}catch(e){say('שגיאת התחברות: '+e.message)}};
+$('logoutBtn').onclick=async function(){await client.auth.signOut();showAuth(false)};
+$('playBtn').onclick=function(){var s=currentSong();if(s)command('play',s.id)};
+$('addBtn').onclick=function(){var s=currentSong();if(s){queue.push(s);saveQueue();say('נוסף לתור')}};
+$('nextBtn').onclick=async function(){if(!queue.length){say('התור ריק');return;}var s=queue[0];try{say('מפעיל את '+s.title);await send('play',s.id);queue.shift();saveQueue();say('מנגן: '+s.title)}catch(e){say('שגיאה: '+e.message)}};
+$('pauseBtn').onclick=function(){command('pause')};$('resumeBtn').onclick=function(){command('resume')};
+$('clearBtn').onclick=function(){if(confirm('למחוק את תור השירים המקומי?')){queue=[];saveQueue()}};
+$('pairBtn').onclick=async function(){var code=$('pairCode').value.trim().toUpperCase();if(!/^[A-F0-9]{10}$/.test(code)){say('קוד צימוד לא תקין');return}try{var r=await client.functions.invoke('karaoke-pairing',{body:{action:'approve',code:code}});if(r.error)throw r.error;say('סטטוס צימוד: '+r.data.status)}catch(e){say('שגיאת צימוד: '+e.message)}};
+loadQueue();renderQueue();if(!window.supabase){say('ספריית Supabase לא נטענה');return}
+client=window.supabase.createClient(SUPABASE_URL,KEY);client.auth.getSession().then(function(r){showAuth(!!(r.data&&r.data.session))}).catch(function(e){say('שגיאת Session: '+e.message)});
+client.auth.onAuthStateChange(function(event,session){if(event==='SIGNED_OUT')showAuth(false);else if(event==='SIGNED_IN')showAuth(true)});
+})();
+</script>
+</body></html>
