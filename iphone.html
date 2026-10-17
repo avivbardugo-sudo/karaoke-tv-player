@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+</head>
+<body style="font-family:Arial;text-align:center;padding:30px">
+<h2>iPhone → Samsung TV</h2>
+<p id="status">Not connected</p>
+<button id="send" style="padding:20px;font-size:22px">
+Send to TV
+</button>
+
+<button id="play" style="padding:20px;font-size:22px;margin-top:20px">
+▶ Play Karaoke on TV
+</button>
+
+<script>
+// DIRECT PLAY TEST BUTTON
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('play').onclick = () => {
+        if (ws.readyState !== WebSocket.OPEN) {
+            status.textContent = 'Not connected';
+            return;
+        }
+
+        ws.send(JSON.stringify({
+            method: 'ms.channel.emit',
+            params: {
+                event: 'karaoke_play',
+                data: 'kBNL1c2uRIA',
+                to: 'all'
+            }
+        }));
+
+        status.textContent = 'Play command sent';
+    };
+});
+
+const status = document.getElementById('status');
+const name = btoa('KaraokeIPhone');
+// DIRECT AUTO RECONNECT
+let ws;
+let reconnectTimer = null;
+
+function connectTV() {
+  if (ws && (ws.readyState === WebSocket.OPEN ||
+             ws.readyState === WebSocket.CONNECTING)) return;
+
+  status.textContent = 'Connecting...';
+
+  ws = new WebSocket(
+    'ws://192.168.10.11:8001/api/v2/channels/samsung.applications?name=' +
+    encodeURIComponent(name)
+  );
+
+  ws.onopen = () => {
+    status.textContent = 'Connected';
+  };
+
+  ws.onmessage = event => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.event === 'ms.channel.connect')
+        status.textContent = 'AUTHORIZED';
+    } catch (err) {
+      console.error('Samsung message error:', err);
+    }
+  };
+
+  ws.onerror = () => {
+    status.textContent = 'Connection error';
+    ws.close();
+  };
+
+  ws.onclose = () => {
+    status.textContent = 'Disconnected - reconnecting...';
+
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectTV();
+      }, 3000);
+    }
+  };
+}
+
+connectTV();
+
+document.getElementById('send').onclick = () => {
+  if (ws.readyState !== WebSocket.OPEN) {
+    status.textContent = 'Not connected';
+    return;
+  }
+  ws.send(JSON.stringify({
+    method: 'ms.channel.emit',
+    params: {
+      event: 'karaoke_test',
+      data: 'HELLO_FROM_IPHONE',
+      to: 'all'
+    }
+  }));
+  status.textContent = 'Message sent';
+};
+</script>
+</body>
+</html>
