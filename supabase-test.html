@@ -39,5 +39,44 @@ document.getElementById('login').onclick = async () => {
     : 'AUTHORIZED - Supabase connected';
 };
 </script>
+
+<!-- REALTIME TEST BUTTON -->
+<button id="testRealtime">Test Realtime</button>
+<p id="realtimeStatus">Realtime not tested</p>
+
+<script>
+document.getElementById('testRealtime').onclick = async () => {
+  const output = document.getElementById('realtimeStatus');
+  output.textContent = 'Connecting to Realtime...';
+
+  const { data: { session } } = await client.auth.getSession();
+
+  if (!session) {
+    output.textContent = 'Please log in first';
+    return;
+  }
+
+  const channel = client.channel('karaoke-tv-control', {
+    config: { private: true }
+  });
+
+  channel.subscribe(async status => {
+    if (status === 'SUBSCRIBED') {
+      output.textContent = 'REALTIME CONNECTED';
+
+      const result = await channel.send({
+        type: 'broadcast',
+        event: 'karaoke_test',
+        payload: { message: 'HELLO_FROM_IPHONE' }
+      });
+
+      output.textContent = 'REALTIME SEND: ' + result;
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      output.textContent = 'REALTIME ERROR: ' + status;
+    }
+  });
+};
+</script>
 </body>
+
 </html>
