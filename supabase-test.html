@@ -161,6 +161,45 @@ document.getElementById('approvePairing').onclick = async function () {
 };
 </script>
 
+
+<h3>Cloud Player Test</h3>
+<button id="cloudPlay">PLAY TEST VIDEO ON TV</button>
+<p id="cloudPlayStatus">Ready</p>
+
+<script>
+document.getElementById('cloudPlay').onclick = async function() {
+  const output = document.getElementById('cloudPlayStatus');
+  output.textContent = 'Sending play command...';
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+
+    if (!session) {
+      output.textContent = 'Please log in first';
+      return;
+    }
+
+    const { data, error } = await client.functions.invoke(
+      'karaoke-pairing',
+      {
+        body: {
+          action: 'send',
+          command: 'play',
+          video_id: 'M7lc1UVf-VE'
+        }
+      }
+    );
+
+    output.textContent = error
+      ? 'PLAY ERROR: ' + error.message
+      : 'PLAY RESULT: ' + JSON.stringify(data);
+
+  } catch (e) {
+    output.textContent = 'PLAY ERROR: ' + e.message;
+  }
+};
+</script>
+
 </body>
 
 
