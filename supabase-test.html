@@ -120,6 +120,47 @@ document.getElementById('testPairingAuth').onclick = async () => {
   }
 };
 </script>
+
+<h3>Pair Samsung TV</h3>
+<input id="pairingCode" placeholder="TV Pairing Code" maxlength="10" autocomplete="off">
+<button id="approvePairing">APPROVE TV</button>
+<p id="pairingStatus">Waiting for pairing</p>
+
+<script>
+document.getElementById('approvePairing').onclick = async function () {
+  const output = document.getElementById('pairingStatus');
+  const code = document.getElementById('pairingCode').value.trim().toUpperCase();
+
+  if (!/^[0-9A-F]{10}$/.test(code)) {
+    output.textContent = 'Invalid pairing code';
+    return;
+  }
+
+  output.textContent = 'Approving TV...';
+
+  try {
+    const { data: { session }, error: authError } =
+      await client.auth.getSession();
+
+    if (authError || !session) {
+      output.textContent = 'Please log in first';
+      return;
+    }
+
+    const { data, error } = await client.functions.invoke(
+      'karaoke-pairing',
+      { body: { action: 'approve', code: code } }
+    );
+
+    output.textContent = error
+      ? 'PAIRING ERROR: ' + error.message
+      : 'PAIRING STATUS: ' + data.status;
+  } catch (e) {
+    output.textContent = 'PAIRING ERROR: ' + e.message;
+  }
+};
+</script>
+
 </body>
 
 
