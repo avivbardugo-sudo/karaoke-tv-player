@@ -60,6 +60,11 @@ document.getElementById('testRealtime').onclick = async () => {
     config: { private: true }
   });
 
+  // REALTIME RECEIVE TEST
+  channel.on('broadcast', { event: 'karaoke_test' }, event => {
+    output.textContent = 'RECEIVED: ' + event.payload.message;
+  });
+
   channel.subscribe(async status => {
     if (status === 'SUBSCRIBED') {
       output.textContent = 'REALTIME CONNECTED';
