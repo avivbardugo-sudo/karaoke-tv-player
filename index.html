@@ -50,6 +50,7 @@ function onYouTubeIframeAPIReady() {
 // Accept commands only from the Samsung app embedding this page.
 window.addEventListener('message', function(event) {
     if (event.source !== window.parent) return;
+    document.title = 'Origin: ' + event.origin + ' | Command: ' + (event.data && event.data.type);
     if (event.origin !== 'file://') return;
 
     const msg = event.data;
