@@ -82,6 +82,45 @@ document.getElementById('testRealtime').onclick = async () => {
   });
 };
 </script>
+
+<!-- PAIRING AUTH TEST -->
+<button id="testPairingAuth">TEST PAIRING AUTH</button>
+<p id="pairingAuthStatus">Not tested</p>
+
+<script>
+document.getElementById('testPairingAuth').onclick = async () => {
+  const output = document.getElementById('pairingAuthStatus');
+  output.textContent = 'Testing pairing authorization...';
+
+  try {
+    const { data: { session }, error: sessionError } =
+      await client.auth.getSession();
+
+    if (sessionError || !session) {
+      output.textContent = 'Please log in first';
+      return;
+    }
+
+    const { data, error } = await client.functions.invoke(
+      'karaoke-pairing',
+      { body: {} }
+    );
+
+    if (error) {
+      output.textContent =
+        'PAIRING AUTH ERROR: ' + error.message;
+      return;
+    }
+
+    output.textContent =
+      'PAIRING AUTH RESULT: ' + JSON.stringify(data);
+
+  } catch (e) {
+    output.textContent = 'ERROR: ' + e.message;
+  }
+};
+</script>
 </body>
+
 
 </html>
