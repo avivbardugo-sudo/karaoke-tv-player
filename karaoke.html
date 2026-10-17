@@ -34,7 +34,7 @@ input{width:100%;margin:6px 0} button{background:#374151;margin:4px} button.main
 <script>
 (function(){
 'use strict';
-var URL='https://vifemcedezouvuayplun.supabase.co';
+var SUPABASE_URL='https://vifemcedezouvuayplun.supabase.co';
 var KEY='sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
 var $=function(id){return document.getElementById(id)};
 var client;
@@ -43,7 +43,7 @@ function say(s){$('message').textContent=s}
 function loadQueue(){try{var q=JSON.parse(localStorage.getItem('karaoke_iphone_queue_v1')||'[]');if(Array.isArray(q))queue=q.filter(function(x){return x && /^[\w-]{11}$/.test(x.id)}).slice(0,100)}catch(e){queue=[]}}
 function saveQueue(){localStorage.setItem('karaoke_iphone_queue_v1',JSON.stringify(queue));renderQueue()}
 function renderQueue(){var el=$('queue');el.textContent='';if(!queue.length){el.textContent='התור ריק';return;}queue.forEach(function(song,i){var row=document.createElement('div');row.className='song';var txt=document.createElement('span');txt.textContent=(i+1)+'. '+song.title;var b=document.createElement('button');b.textContent='הסר';b.onclick=function(){queue.splice(i,1);saveQueue()};row.appendChild(txt);row.appendChild(b);el.appendChild(row)})}
-function videoId(v){v=(v||'').trim();if(/^[\w-]{11}$/.test(v))return v;try{var u=new URL(v);if(u.hostname==='youtu.be'||u.hostname==='www.youtu.be')v=u.pathname.split('/')[1];else if(['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com'].includes(u.hostname)){v=u.searchParams.get('v')||((u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/))||[])[1];}else return null;return /^[\w-]{11}$/.test(v||'')?v:null}catch(e){return null}}
+function videoId(v){v=(v||'').trim();if(/^[\w-]{11}$/.test(v))return v;try{var u=new window.URL(v);if(u.hostname==='youtu.be'||u.hostname==='www.youtu.be')v=u.pathname.split('/')[1];else if(['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com'].includes(u.hostname)){v=u.searchParams.get('v')||((u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/))||[])[1];}else return null;return /^[\w-]{11}$/.test(v||'')?v:null}catch(e){return null}}
 function currentSong(){var id=videoId($('videoInput').value);if(!id){say('קישור YouTube לא תקין');return null}return {id:id,title:$('titleInput').value.trim()||id}}
 async function send(command,id){var sess=await client.auth.getSession();if(!sess.data.session){showAuth(false);throw Error('יש להתחבר שוב')}var body={action:'send',command:command};if(id)body.video_id=id;var result=await client.functions.invoke('karaoke-pairing',{body:body});if(result.error){var detail=result.error.message;if(result.error.context&&result.error.context.json){try{detail=JSON.stringify(await result.error.context.json())}catch(e){}}throw Error(detail)}if(!result.data||result.data.status!=='QUEUED')throw Error('תשובה לא צפויה');return result.data}
 async function command(cmd,id){try{say('שולח לטלוויזיה...');var r=await send(cmd,id);say('נשלח לטלוויזיה. Command #'+r.command_id)}catch(e){say('שגיאה: '+e.message)}}
@@ -57,7 +57,7 @@ $('pauseBtn').onclick=function(){command('pause')};$('resumeBtn').onclick=functi
 $('clearBtn').onclick=function(){if(confirm('למחוק את תור השירים המקומי?')){queue=[];saveQueue()}};
 $('pairBtn').onclick=async function(){var code=$('pairCode').value.trim().toUpperCase();if(!/^[A-F0-9]{10}$/.test(code)){say('קוד צימוד לא תקין');return}try{var r=await client.functions.invoke('karaoke-pairing',{body:{action:'approve',code:code}});if(r.error)throw r.error;say('סטטוס צימוד: '+r.data.status)}catch(e){say('שגיאת צימוד: '+e.message)}};
 loadQueue();renderQueue();if(!window.supabase){say('ספריית Supabase לא נטענה');return}
-client=window.supabase.createClient(URL,KEY);client.auth.getSession().then(function(r){showAuth(!!(r.data&&r.data.session))}).catch(function(e){say('שגיאת Session: '+e.message)});
+client=window.supabase.createClient(SUPABASE_URL,KEY);client.auth.getSession().then(function(r){showAuth(!!(r.data&&r.data.session))}).catch(function(e){say('שגיאת Session: '+e.message)});
 client.auth.onAuthStateChange(function(event,session){if(event==='SIGNED_OUT')showAuth(false);else if(event==='SIGNED_IN')showAuth(true)});
 })();
 </script>
