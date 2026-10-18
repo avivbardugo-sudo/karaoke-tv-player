@@ -63,6 +63,9 @@ small { color:#cbd5e1 }
     <button id="resumeBtn">▶ המשך</button>
     <button id="nextBtn" class="main">⏭ הבא בתור</button>
   </div>
+  <div class="row">
+    <button id="skipAdBtn">⏩ דלג פרסומת <small>(טוען את השיר מחדש)</small></button>
+  </div>
 
   <h2>חיפוש שירים ב־YouTube</h2>
   <div class="row">
@@ -431,6 +434,7 @@ $('nextBtn').onclick = async function() {
 };
 
 $('pauseBtn').onclick = function() { command('pause'); };
+$('skipAdBtn').onclick = function() { command('skip'); };
 $('resumeBtn').onclick = function() { command('resume'); };
 
 $('refreshBtn').onclick = function() {

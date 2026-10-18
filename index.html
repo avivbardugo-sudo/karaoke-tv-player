@@ -22,7 +22,7 @@ html, body, #player {
 'use strict';
 
 // Embedded by the Samsung Tizen app (origin file://).
-// Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart
+// Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart, reload
 // Player -> parent: karaoke_ready, karaoke_state{state,videoId}, karaoke_ended{videoId},
 //                   karaoke_error{code,videoId}
 // Uses youtube.com so a signed-in YouTube Premium account applies (no ads);
@@ -98,6 +98,13 @@ function handle(msg) {
         player.seekTo(target, true);
         return;
     }
+    case 'reload':
+        // "Skip ad" experiment: reload the song from the start; YouTube often
+        // does not serve the pre-roll ad again on an immediate reload.
+        if (!currentVideoId) return;
+        startRetries = 0;
+        player.loadVideoById(currentVideoId, 0);
+        return;
     case 'restart':
         player.seekTo(0, true);
         player.playVideo();
