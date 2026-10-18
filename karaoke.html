@@ -1,9 +1,10 @@
-
 <!doctype html>
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Karaoke">
 <title>Karaoke Cloud Remote</title>
 <style>
 :root { color-scheme:dark; font-family:system-ui,Arial; }
@@ -22,6 +23,7 @@ button:disabled { opacity:.45 }
 .row { display:flex;gap:5px;flex-wrap:wrap }
 .row>* { flex:1 }
 #message { color:#a7f3d0;min-height:3em;white-space:pre-wrap }
+#nowPlaying { font-size:18px;font-weight:bold;color:#fde68a;overflow-wrap:anywhere }
 .song {
   display:flex;align-items:center;justify-content:space-between;
   gap:8px;border-top:1px solid #455166;padding:8px 0
@@ -53,11 +55,11 @@ small { color:#cbd5e1 }
 </section>
 
 <section id="controls" hidden>
+  <div id="nowPlaying">לא מתנגן כרגע</div>
   <div class="row">
-    <button id="logoutBtn">התנתק</button>
     <button id="pauseBtn">⏸ השהה</button>
     <button id="resumeBtn">▶ המשך</button>
-    <button id="nextBtn">⏭ הבא בתור</button>
+    <button id="nextBtn" class="main">⏭ הבא בתור</button>
   </div>
 
   <h2>חיפוש שירים ב־YouTube</h2>
@@ -77,48 +79,84 @@ small { color:#cbd5e1 }
   </div>
   <small>אפשר גם להדביק כאן קישור YouTube מלא.</small>
 
-  <h2>תור שירים <small>(נשמר באייפון זה בלבד)</small></h2>
-  <div id="queue"></div>
-  <button id="clearBtn">נקה תור</button>
+  <h2>תור שירים בענן <small>(ממשיך גם כשהאייפון נעול)</small></h2>
+  <div id="queue">טוען...</div>
+  <div class="row">
+    <button id="refreshBtn">↻ רענן</button>
+    <button id="clearBtn">נקה תור</button>
+  </div>
 
   <h2>צימוד טלוויזיה</h2>
   <input id="pairCode" maxlength="10" placeholder="קוד שמופיע בטלוויזיה" dir="ltr">
   <button id="pairBtn">אשר טלוויזיה</button>
+
+  <div class="row"><button id="logoutBtn">התנתק</button></div>
 </section>
 
 <p id="message" role="status" aria-live="polite">טוען...</p>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function(){
 'use strict';
 
 var SUPABASE_URL = 'https://vifemcedezouvuayplun.supabase.co';
 var KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
+var REFRESH_MS = 5000;
 var $ = function(id){ return document.getElementById(id); };
 
 var client;
 var queue = [];
+var refreshTimer = null;
 
 function say(s) {
   $('message').textContent = s;
 }
 
-function loadQueue() {
-  try {
-    var q = JSON.parse(localStorage.getItem('karaoke_iphone_queue_v1') || '[]');
-    if (Array.isArray(q)) {
-      queue = q.filter(function(x){
-        return x && /^[\w-]{11}$/.test(x.id);
-      }).slice(0,100);
+/* ---------------- Edge Function calls ---------------- */
+
+async function invoke(name, body) {
+  var sess = await client.auth.getSession();
+  if (!sess.data.session) {
+    showAuth(false);
+    throw Error('יש להתחבר שוב');
+  }
+
+  var result = await client.functions.invoke(name, { body:body });
+  if (result.error) {
+    var detail = result.error.message;
+    if (result.error.context && typeof result.error.context.json === 'function') {
+      try {
+        var b = await result.error.context.json();
+        detail = b.error || detail;
+      } catch(e) {}
     }
+    throw Error(detail);
+  }
+  return result.data;
+}
+
+function queueCall(action, payload) {
+  return invoke('karaoke-queue', Object.assign({ action:action }, payload || {}));
+}
+
+// Pause / resume go directly to the TV through karaoke-pairing.
+async function command(cmd) {
+  try {
+    say('שולח לטלוויזיה...');
+    var r = await invoke('karaoke-pairing', { action:'send', command:cmd });
+    if (!r || r.status !== 'QUEUED') throw Error('תשובה לא צפויה');
+    say('נשלח לטלוויזיה. Command #' + r.command_id);
   } catch(e) {
-    queue = [];
+    say('שגיאה: ' + e.message);
   }
 }
 
-function saveQueue() {
-  localStorage.setItem('karaoke_iphone_queue_v1', JSON.stringify(queue));
+/* ---------------- Queue ---------------- */
+
+async function refreshQueue() {
+  var result = await queueCall('list');
+  queue = Array.isArray(result.songs) ? result.songs : [];
   renderQueue();
 }
 
@@ -126,12 +164,16 @@ function renderQueue() {
   var el = $('queue');
   el.textContent = '';
 
-  if (!queue.length) {
+  var playing = queue.filter(function(s){ return s.status === 'playing'; })[0];
+  $('nowPlaying').textContent = playing ? ('▶ מתנגן: ' + playing.title) : 'לא מתנגן כרגע';
+
+  var pending = queue.filter(function(s){ return s.status === 'pending'; });
+  if (!pending.length) {
     el.textContent = 'התור ריק';
     return;
   }
 
-  queue.forEach(function(song, i) {
+  pending.forEach(function(song, i) {
     var row = document.createElement('div');
     row.className = 'song';
 
@@ -140,9 +182,13 @@ function renderQueue() {
 
     var b = document.createElement('button');
     b.textContent = 'הסר';
-    b.onclick = function() {
-      queue.splice(i,1);
-      saveQueue();
+    b.onclick = async function() {
+      try {
+        await queueCall('remove', { queue_id:song.id });
+        await refreshQueue();
+      } catch(e) {
+        say('שגיאה: ' + e.message);
+      }
     };
 
     row.appendChild(txt);
@@ -150,6 +196,44 @@ function renderQueue() {
     el.appendChild(row);
   });
 }
+
+async function addToQueue(song) {
+  try {
+    say('מוסיף לתור...');
+    var r = await queueCall('add', { video_id:song.id, title:song.title });
+    await refreshQueue();
+    say(r.started ? ('מתחיל לנגן: ' + song.title) : ('נוסף לתור: ' + song.title));
+  } catch(e) {
+    say(e.message === 'QUEUE_FULL' ? 'התור מלא (100 שירים)' : 'שגיאת תור: ' + e.message);
+  }
+}
+
+async function playNow(song) {
+  try {
+    say('מפעיל בטלוויזיה...');
+    await queueCall('play_now', { video_id:song.id, title:song.title });
+    await refreshQueue();
+    say('מנגן: ' + song.title);
+  } catch(e) {
+    say('שגיאה: ' + e.message);
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  refreshTimer = setInterval(function() {
+    if (document.visibilityState === 'visible') {
+      refreshQueue().catch(function(){});
+    }
+  }, REFRESH_MS);
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+/* ---------------- Input helpers ---------------- */
 
 function videoId(v) {
   v = (v || '').trim();
@@ -159,10 +243,8 @@ function videoId(v) {
   try {
     var u = new window.URL(v);
 
-    if (u.hostname === 'youtu.be' ||
-        u.hostname === 'www.youtu.be') {
+    if (u.hostname === 'youtu.be' || u.hostname === 'www.youtu.be') {
       v = u.pathname.split('/')[1];
-
     } else if ([
       'youtube.com',
       'www.youtube.com',
@@ -176,7 +258,6 @@ function videoId(v) {
     }
 
     return /^[\w-]{11}$/.test(v || '') ? v : null;
-
   } catch(e) {
     return null;
   }
@@ -184,83 +265,40 @@ function videoId(v) {
 
 function currentSong() {
   var id = videoId($('videoInput').value);
-
   if (!id) {
     say('קישור YouTube לא תקין');
     return null;
   }
-
   return {
     id: id,
     title: $('titleInput').value.trim() || id
   };
 }
 
-async function send(command, id) {
-  var sess = await client.auth.getSession();
-
-  if (!sess.data.session) {
-    showAuth(false);
-    throw Error('יש להתחבר שוב');
-  }
-
-  var body = { action:'send', command:command };
-  if (id) body.video_id = id;
-
-  var result = await client.functions.invoke(
-    'karaoke-pairing',
-    { body:body }
-  );
-
-  if (result.error) {
-    var detail = result.error.message;
-
-    if (result.error.context && result.error.context.json) {
-      try {
-        detail = JSON.stringify(await result.error.context.json());
-      } catch(e) {}
-    }
-    throw Error(detail);
-  }
-
-  if (!result.data || result.data.status !== 'QUEUED') {
-    throw Error('תשובה לא צפויה');
-  }
-
-  return result.data;
-}
-
-async function command(cmd, id) {
-  try {
-    say('שולח לטלוויזיה...');
-    var r = await send(cmd, id);
-    say('נשלח לטלוויזיה. Command #' + r.command_id);
-  } catch(e) {
-    say('שגיאה: ' + e.message);
-  }
-}
+/* ---------------- Auth ---------------- */
 
 function showAuth(ok) {
   $('loginPanel').hidden = !!ok;
   $('controls').hidden = !ok;
   say(ok ? 'מחובר — מוכן לניגון' : 'יש להתחבר');
+  if (ok) {
+    refreshQueue().catch(function(e){ say('שגיאת תור: ' + e.message); });
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
+  }
 }
 
 $('loginBtn').onclick = async function() {
   say('מתחבר...');
-
   try {
     var r = await client.auth.signInWithPassword({
       email: $('email').value.trim(),
       password: $('password').value
     });
-
     $('password').value = '';
-
     if (r.error) throw r.error;
-
     showAuth(true);
-
   } catch(e) {
     say('שגיאת התחברות: ' + e.message);
   }
@@ -270,6 +308,8 @@ $('logoutBtn').onclick = async function() {
   await client.auth.signOut();
   showAuth(false);
 };
+
+/* ---------------- Search ---------------- */
 
 function searchStatus(text) {
   $('searchStatus').textContent = text;
@@ -285,13 +325,9 @@ function renderResults(videos) {
   }
 
   videos.forEach(function(v) {
-    if (!v || typeof v.id !== 'string' ||
-        !/^[A-Za-z0-9_-]{11}$/.test(v.id)) return;
+    if (!v || typeof v.id !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(v.id)) return;
 
-    var song = {
-      id: v.id,
-      title: String(v.title || v.id)
-    };
+    var song = { id: v.id, title: String(v.title || v.id) };
 
     var row = document.createElement('div');
     row.className = 'result';
@@ -317,30 +353,17 @@ function renderResults(videos) {
     var play = document.createElement('button');
     play.className = 'main';
     play.textContent = '▶ נגן עכשיו';
-    play.onclick = function() {
-      command('play', song.id);
-    };
+    play.onclick = function() { playNow(song); };
 
     var add = document.createElement('button');
     add.textContent = '+ הוסף לתור';
-    add.onclick = function() {
-      if (queue.length >= 100) {
-        say('התור מלא (100 שירים)');
-        return;
-      }
-
-      queue.push(song);
-      saveQueue();
-      say('נוסף לתור: ' + song.title);
-    };
+    add.onclick = function() { addToQueue(song); };
 
     actions.appendChild(play);
     actions.appendChild(add);
-
     content.appendChild(title);
     content.appendChild(channel);
     content.appendChild(actions);
-
     row.appendChild(img);
     row.appendChild(content);
     box.appendChild(row);
@@ -357,50 +380,17 @@ async function searchVideos() {
 
   var button = $('searchBtn');
   button.disabled = true;
-
   searchStatus('מחפש ב־YouTube...');
   $('searchResults').textContent = '';
 
   try {
-    var sessionResult = await client.auth.getSession();
-
-    if (!sessionResult.data.session) {
-      showAuth(false);
-      throw Error('יש להתחבר מחדש');
-    }
-
-    var result = await client.functions.invoke(
-      'bright-task',
-      { body: { query:query } }
-    );
-
-    if (result.error) {
-      var detail = result.error.message;
-
-      if (result.error.context &&
-          typeof result.error.context.json === 'function') {
-        try {
-          var responseBody = await result.error.context.json();
-          detail = responseBody.error || detail;
-        } catch(e) {}
-      }
-
-      throw Error(detail);
-    }
-
-    if (!result.data ||
-        result.data.status !== 'OK' ||
-        !Array.isArray(result.data.videos)) {
+    var data = await invoke('bright-task', { query:query });
+    if (!data || data.status !== 'OK' || !Array.isArray(data.videos)) {
       throw Error('תגובה לא תקינה משרת החיפוש');
     }
-
-    searchStatus(
-      'נמצאו ' + result.data.videos.length +
-      ' תוצאות. ייתכן שסרטונים מסוימים אינם ניתנים להטמעה.'
-    );
-
-    renderResults(result.data.videos);
-
+    searchStatus('נמצאו ' + data.videos.length +
+                 ' תוצאות. ייתכן שסרטונים מסוימים אינם ניתנים להטמעה.');
+    renderResults(data.videos);
   } catch(e) {
     searchStatus('שגיאת חיפוש: ' + e.message);
   } finally {
@@ -409,7 +399,6 @@ async function searchVideos() {
 }
 
 $('searchBtn').onclick = searchVideos;
-
 $('searchInput').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') {
     e.preventDefault();
@@ -417,92 +406,63 @@ $('searchInput').addEventListener('keydown', function(e) {
   }
 });
 
+/* ---------------- Buttons ---------------- */
+
 $('playBtn').onclick = function() {
   var s = currentSong();
-  if (s) command('play', s.id);
+  if (s) playNow(s);
 };
 
 $('addBtn').onclick = function() {
   var s = currentSong();
-
-  if (s) {
-    if (queue.length >= 100) {
-      say('התור מלא (100 שירים)');
-      return;
-    }
-
-    queue.push(s);
-    saveQueue();
-    say('נוסף לתור');
-  }
+  if (s) addToQueue(s);
 };
 
 $('nextBtn').onclick = async function() {
-  if (!queue.length) {
-    say('התור ריק');
-    return;
-  }
-
-  var s = queue[0];
-
   try {
-    say('מפעיל את ' + s.title);
-    await send('play', s.id);
-
-    queue.shift();
-    saveQueue();
-
-    say('מנגן: ' + s.title);
-
+    var r = await queueCall('next');
+    await refreshQueue();
+    say(r.next ? 'מנגן: ' + r.next.next_title : 'התור ריק');
   } catch(e) {
     say('שגיאה: ' + e.message);
   }
 };
 
-$('pauseBtn').onclick = function() {
-  command('pause');
+$('pauseBtn').onclick = function() { command('pause'); };
+$('resumeBtn').onclick = function() { command('resume'); };
+
+$('refreshBtn').onclick = function() {
+  refreshQueue().then(function(){ say('התור עודכן'); })
+                .catch(function(e){ say('שגיאה: ' + e.message); });
 };
 
-$('resumeBtn').onclick = function() {
-  command('resume');
-};
-
-$('clearBtn').onclick = function() {
-  if (confirm('למחוק את תור השירים המקומי?')) {
-    queue = [];
-    saveQueue();
+$('clearBtn').onclick = async function() {
+  if (!confirm('לנקות את התור בענן?')) return;
+  try {
+    await queueCall('clear');
+    await refreshQueue();
+    say('התור נוקה');
+  } catch(e) {
+    say('שגיאה: ' + e.message);
   }
 };
 
 $('pairBtn').onclick = async function() {
   var code = $('pairCode').value.trim().toUpperCase();
-
   if (!/^[A-F0-9]{10}$/.test(code)) {
     say('קוד צימוד לא תקין');
     return;
   }
-
   try {
-    var r = await client.functions.invoke(
-      'karaoke-pairing',
-      {
-        body: {
-          action:'approve',
-          code:code
-        }
-      }
-    );
-
-    if (r.error) throw r.error;
-
-    say('סטטוס צימוד: ' + r.data.status);
-
+    var r = await invoke('karaoke-pairing', { action:'approve', code:code });
+    say('סטטוס צימוד: ' + r.status);
   } catch(e) {
     say('שגיאת צימוד: ' + e.message);
   }
 };
 
-loadQueue();
+/* ---------------- Start ---------------- */
+
 renderQueue();
 
 if (!window.supabase) {
@@ -513,18 +473,16 @@ if (!window.supabase) {
 client = window.supabase.createClient(SUPABASE_URL, KEY);
 
 client.auth.getSession()
-  .then(function(r) {
-    showAuth(!!(r.data && r.data.session));
-  })
-  .catch(function(e) {
-    say('שגיאת Session: ' + e.message);
-  });
+  .then(function(r) { showAuth(!!(r.data && r.data.session)); })
+  .catch(function(e) { say('שגיאת Session: ' + e.message); });
 
-client.auth.onAuthStateChange(function(event, session) {
-  if (event === 'SIGNED_OUT') {
-    showAuth(false);
-  } else if (event === 'SIGNED_IN') {
-    showAuth(true);
+client.auth.onAuthStateChange(function(event) {
+  if (event === 'SIGNED_OUT') showAuth(false);
+});
+
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && !$('controls').hidden) {
+    refreshQueue().catch(function(){});
   }
 });
 

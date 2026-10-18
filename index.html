@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,16 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karaoke YouTube Player</title>
 <style>
-html, body {
+html, body, #player {
     margin: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
     background: #000;
-}
-#player {
-    width: 100%;
-    height: 100%;
 }
 </style>
 </head>
@@ -26,68 +21,141 @@ html, body {
 <script>
 'use strict';
 
+// Embedded by the Samsung Tizen app (origin file://).
+// Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart
+// Player -> parent: karaoke_ready, karaoke_state{state,videoId}, karaoke_ended{videoId},
+//                   karaoke_error{code,videoId}
+// Optional: ?nocookie=1 uses youtube-nocookie.com (privacy-enhanced mode).
+
+const VIDEO_RE = /^[A-Za-z0-9_-]{11}$/;
+const STATE_NAMES = { '-1': 'unstarted', 0: 'ended', 1: 'playing', 2: 'paused', 3: 'buffering', 5: 'cued' };
+const useNoCookie = new URLSearchParams(location.search).get('nocookie') === '1';
+
 let player = null;
+let ready = false;
+let currentVideoId = null;
+let pending = [];
+
+function toParent(msg) {
+    // The parent is a file:// document, which cannot be named as a target origin.
+    window.parent.postMessage(msg, '*');
+}
+
+function state() {
+    return player && typeof player.getPlayerState === 'function' ? player.getPlayerState() : -1;
+}
+
+function reportState() {
+    toParent({ type: 'karaoke_state', state: STATE_NAMES[state()] || String(state()), videoId: currentVideoId });
+}
+
+// Ask YouTube to pause; if it is still playing shortly after, ask again once.
+function pauseReliably() {
+    player.pauseVideo();
+    setTimeout(function() {
+        if (state() === YT.PlayerState.PLAYING || state() === YT.PlayerState.BUFFERING) {
+            player.pauseVideo();
+        }
+        reportState();
+    }, 700);
+}
+
+function handle(msg) {
+    switch (msg.type) {
+    case 'load_youtube':
+        if (typeof msg.videoId !== 'string' || !VIDEO_RE.test(msg.videoId)) return;
+        currentVideoId = msg.videoId;
+        player.loadVideoById(msg.videoId);
+        return;
+    case 'pause':
+        pauseReliably();
+        return;
+    case 'resume':
+        player.playVideo();
+        return;
+    case 'toggle':
+        if (state() === YT.PlayerState.PLAYING || state() === YT.PlayerState.BUFFERING) {
+            pauseReliably();
+        } else {
+            player.playVideo();
+        }
+        return;
+    case 'seek': {
+        const delta = Number(msg.seconds);
+        if (!Number.isFinite(delta)) return;
+        const target = Math.max(0, (player.getCurrentTime() || 0) + delta);
+        player.seekTo(target, true);
+        return;
+    }
+    case 'restart':
+        player.seekTo(0, true);
+        player.playVideo();
+        return;
+    case 'command':
+        // Compatibility with the older command format.
+        if (msg.action === 'play' || msg.action === 'resume') player.playVideo();
+        if (msg.action === 'pause') pauseReliably();
+        return;
+    case 'get_state':
+        reportState();
+        return;
+    }
+}
 
 function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
+    const options = {
         width: '100%',
         height: '100%',
         playerVars: {
+            autoplay: 1,
             playsinline: 1,
-            controls: 1
+            controls: 1,
+            rel: 0,
+            iv_load_policy: 3,
+            fs: 0
         },
         events: {
             onReady: function() {
-                console.log('YouTube player ready');
+                ready = true;
+                toParent({ type: 'karaoke_ready' });
+                // Commands that arrived before the player was ready.
+                const queued = pending;
+                pending = [];
+                queued.forEach(handle);
             },
-            onError: function(event) {
-                console.error('YouTube error:', event.data);
+            onStateChange: function(e) {
+                reportState();
+                if (e.data === YT.PlayerState.ENDED && currentVideoId) {
+                    const finished = currentVideoId;
+                    currentVideoId = null;
+                    toParent({ type: 'karaoke_ended', videoId: finished });
+                }
+            },
+            onError: function(e) {
+                // 2 invalid id, 5 HTML5 error, 100 not found, 101/150 embedding disabled.
+                toParent({ type: 'karaoke_error', code: e.data, videoId: currentVideoId });
             }
         }
-    });
+    };
+    if (useNoCookie) options.host = 'https://www.youtube-nocookie.com';
+    player = new YT.Player('player', options);
 }
 
 // Accept commands only from the Samsung app embedding this page.
 window.addEventListener('message', function(event) {
     if (event.source !== window.parent) return;
-    document.title = 'Origin: ' + event.origin + ' | Command: ' + (event.data && event.data.type);
     if (event.origin !== 'file://') return;
 
     const msg = event.data;
+    if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
 
-    if (!msg || typeof msg !== 'object') return;
-    if (!player || typeof player.loadVideoById !== 'function') return;
-
-    // Play a selected YouTube video.
-    if (
-        msg.type === 'load_youtube' &&
-        typeof msg.videoId === 'string' &&
-        /^[A-Za-z0-9_-]{11}$/.test(msg.videoId)
-    ) {
-        player.loadVideoById(msg.videoId);
+    if (!ready) {
+        // Keep only the latest load plus later controls; drop the rest.
+        if (msg.type === 'load_youtube') pending = [];
+        pending.push(msg);
         return;
     }
-
-    // Pause video.
-    if (msg.type === 'pause') {
-        player.pauseVideo();
-        return;
-    }
-
-    // Resume video.
-    if (msg.type === 'resume') {
-        player.playVideo();
-        return;
-    }
-
-    // Compatibility with the older command format.
-    if (msg.type === 'command') {
-        if (msg.action === 'play' || msg.action === 'resume') {
-            player.playVideo();
-        } else if (msg.action === 'pause') {
-            player.pauseVideo();
-        }
-    }
+    handle(msg);
 });
 
 const script = document.createElement('script');
