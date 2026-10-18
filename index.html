@@ -25,11 +25,12 @@ html, body, #player {
 // Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart
 // Player -> parent: karaoke_ready, karaoke_state{state,videoId}, karaoke_ended{videoId},
 //                   karaoke_error{code,videoId}
-// Uses youtube-nocookie.com (privacy-enhanced mode) by default; ?nocookie=0 reverts to youtube.com.
+// Uses youtube.com so a signed-in YouTube Premium account applies (no ads);
+// ?nocookie=1 switches to youtube-nocookie.com (privacy-enhanced, ignores the account).
 
 const VIDEO_RE = /^[A-Za-z0-9_-]{11}$/;
 const STATE_NAMES = { '-1': 'unstarted', 0: 'ended', 1: 'playing', 2: 'paused', 3: 'buffering', 5: 'cued' };
-const useNoCookie = new URLSearchParams(location.search).get('nocookie') !== '0';
+const useNoCookie = new URLSearchParams(location.search).get('nocookie') === '1';
 
 let player = null;
 let ready = false;
