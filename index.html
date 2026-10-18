@@ -36,6 +36,8 @@ let player = null;
 let ready = false;
 let currentVideoId = null;
 let pending = [];
+let startRetries = 0;
+const MAX_START_RETRIES = 3;
 
 function toParent(msg) {
     // The parent is a file:// document, which cannot be named as a target origin.
@@ -66,6 +68,7 @@ function handle(msg) {
     case 'load_youtube':
         if (typeof msg.videoId !== 'string' || !VIDEO_RE.test(msg.videoId)) return;
         currentVideoId = msg.videoId;
+        startRetries = 0;
         player.loadVideoById(msg.videoId);
         return;
     case 'pause':
@@ -75,6 +78,13 @@ function handle(msg) {
         player.playVideo();
         return;
     case 'toggle':
+        // First OK after a muted autoplay restores the sound instead of pausing.
+        if (player.isMuted() && state() === YT.PlayerState.PLAYING) {
+            player.unMute();
+            player.setVolume(100);
+            toParent({ type: 'karaoke_unmuted' });
+            return;
+        }
         if (state() === YT.PlayerState.PLAYING || state() === YT.PlayerState.BUFFERING) {
             pauseReliably();
         } else {
@@ -126,6 +136,18 @@ function onYouTubeIframeAPIReady() {
             },
             onStateChange: function(e) {
                 reportState();
+                // Autoplay blocked: the video stays "cued". Ask to play a few
+                // times, then fall back to muted playback (always allowed).
+                if (e.data === YT.PlayerState.CUED && currentVideoId) {
+                    startRetries++;
+                    if (startRetries <= MAX_START_RETRIES) {
+                        player.playVideo();
+                    } else if (startRetries === MAX_START_RETRIES + 1) {
+                        player.mute();
+                        player.playVideo();
+                        toParent({ type: 'karaoke_muted_autoplay' });
+                    }
+                }
                 if (e.data === YT.PlayerState.ENDED && currentVideoId) {
                     const finished = currentVideoId;
                     currentVideoId = null;
