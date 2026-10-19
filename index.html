@@ -22,9 +22,10 @@ html, body, #player {
 'use strict';
 
 // Embedded by the Samsung Tizen app (origin file://).
-// Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart, reload
+// Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart, reload,
+//                   mute, unmute
 // Player -> parent: karaoke_ready, karaoke_state{state,videoId}, karaoke_ended{videoId},
-//                   karaoke_error{code,videoId}
+//                   karaoke_error{code,videoId}, karaoke_ad{active,reason,videoId}
 // Uses youtube.com so a signed-in YouTube Premium account applies (no ads);
 // ?nocookie=1 switches to youtube-nocookie.com (privacy-enhanced, ignores the account).
 
@@ -69,7 +70,15 @@ function handle(msg) {
         if (typeof msg.videoId !== 'string' || !VIDEO_RE.test(msg.videoId)) return;
         currentVideoId = msg.videoId;
         startRetries = 0;
+        resetAdDetector();
         player.loadVideoById(msg.videoId);
+        return;
+    case 'mute':
+        player.mute();
+        return;
+    case 'unmute':
+        player.unMute();
+        player.setVolume(100);
         return;
     case 'pause':
         pauseReliably();
@@ -156,6 +165,7 @@ function onYouTubeIframeAPIReady() {
                     }
                 }
                 if (e.data === YT.PlayerState.ENDED && currentVideoId) {
+                    resetAdDetector();
                     const finished = currentVideoId;
                     currentVideoId = null;
                     toParent({ type: 'karaoke_ended', videoId: finished });
@@ -170,6 +180,49 @@ function onYouTubeIframeAPIReady() {
     if (useNoCookie) options.host = 'https://www.youtube-nocookie.com';
     player = new YT.Player('player', options);
 }
+
+// Ad detection. The IFrame API has no ad events, so use what an ad looks like
+// from outside: the player reports another video, or it says "playing" while
+// the song's own clock does not move (pre-roll and mid-roll ads).
+let adActive = false;
+let lastTime = -1;
+let frozenTicks = 0;
+
+function setAd(active, reason) {
+    if (active === adActive) return;
+    adActive = active;
+    toParent({ type: 'karaoke_ad', active: active, reason: reason, videoId: currentVideoId });
+}
+
+function resetAdDetector() {
+    lastTime = -1;
+    frozenTicks = 0;
+    setAd(false, 'new-video');
+}
+
+setInterval(function() {
+    if (!ready || !currentVideoId) return;
+    let data = null;
+    try { data = player.getVideoData(); } catch (e) {}
+    if (data && data.video_id && data.video_id !== currentVideoId) {
+        setAd(true, 'other-video');
+        return;
+    }
+    if (state() !== YT.PlayerState.PLAYING) {
+        // Paused/buffering: keep the last verdict.
+        frozenTicks = 0;
+        return;
+    }
+    const t = player.getCurrentTime() || 0;
+    if (Math.abs(t - lastTime) < 0.05) {
+        frozenTicks++;
+        if (frozenTicks >= 2) setAd(true, 'clock-frozen');
+    } else {
+        frozenTicks = 0;
+        setAd(false, 'clock-moves');
+    }
+    lastTime = t;
+}, 1000);
 
 // Accept commands only from the Samsung app embedding this page.
 window.addEventListener('message', function(event) {

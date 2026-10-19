@@ -41,6 +41,21 @@ button:disabled { opacity:.45 }
 .result-actions { display:flex;gap:4px;flex-wrap:wrap }
 .result-actions button { font-size:14px;padding:8px;min-height:38px }
 a { color:#93c5fd }
+textarea { box-sizing:border-box;width:100%;margin:6px 0;border:1px solid #566378;border-radius:9px;
+  padding:10px;font-size:16px;background:#111827;color:white;font-family:inherit }
+label.inline { display:flex;align-items:center;gap:8px;margin:8px 4px }
+label.inline input { width:auto;margin:0;min-height:0 }
+label.inline input[type=number] { width:90px;padding:8px }
+summary { font-size:19px;font-weight:bold;cursor:pointer;padding:6px 0 }
+#quizStatus { font-size:17px;font-weight:bold;color:#c4b5fd }
+#quizTimer { font-size:34px;font-weight:bold;text-align:center;color:#fde68a }
+#quizTimer.hurry { color:#f87171 }
+#quizQuestion { font-size:19px;font-weight:bold;margin:8px 0;overflow-wrap:anywhere }
+#quizAnswers button { display:block;width:calc(100% - 8px);text-align:right;font-size:18px }
+#quizAnswers button.right { background:#065f46;border-color:#34d399 }
+#quizAnswers button.wrong { background:#7f1d1d;border-color:#f87171 }
+#quizPenalty { color:#fde68a;margin:6px 0 }
+.item.used span { opacity:.5 }
 small { color:#cbd5e1 }
 </style>
 </head>
@@ -63,9 +78,23 @@ small { color:#cbd5e1 }
     <button id="resumeBtn">▶ המשך</button>
     <button id="nextBtn" class="main">⏭ הבא בתור</button>
   </div>
+
+  <h2>🎯 חידון</h2>
+  <div id="quizStatus">טוען...</div>
+  <div id="quizTimer"></div>
+  <div id="quizQuestion"></div>
+  <div id="quizAnswers"></div>
+  <div id="quizPenalty"></div>
   <div class="row">
-    <button id="skipAdBtn">⏩ דלג פרסומת <small>(טוען את השיר מחדש)</small></button>
+    <button id="quizStartBtn" class="main">❓ שאלה עכשיו</button>
+    <button id="quizNoAnswerBtn">⏱ לא ענה</button>
   </div>
+  <div class="row">
+    <button id="quizPenaltyBtn">🎤 נגן שיר עונש</button>
+    <button id="quizEndBtn">⏹ סיים סבב</button>
+  </div>
+  <label class="inline"><input type="checkbox" id="quizAuto"> שאלה אוטומטית בכל פרסומת</label>
+  <label class="inline">זמן לשאלה (שניות): <input id="quizDuration" type="number" min="10" max="120" step="5" dir="ltr"></label>
 
   <h2>חיפוש שירים ב־YouTube</h2>
   <div class="row">
@@ -81,6 +110,7 @@ small { color:#cbd5e1 }
   <div class="row">
     <button id="playBtn" class="main">▶ נגן עכשיו</button>
     <button id="addBtn">+ הוסף לתור</button>
+    <button id="penaltyAddBtn">🎤 לשירי עונש</button>
   </div>
   <small>אפשר גם להדביק כאן קישור YouTube מלא.</small>
 
@@ -90,6 +120,32 @@ small { color:#cbd5e1 }
     <button id="refreshBtn">↻ רענן</button>
     <button id="clearBtn">נקה תור</button>
   </div>
+
+  <details id="qManage">
+    <summary>📝 שאלות לחידון (<span id="qCount">…</span>)</summary>
+    <input id="qText" placeholder="השאלה">
+    <input id="qA0" placeholder="✓ התשובה הנכונה">
+    <input id="qA1" placeholder="✗ תשובה שגויה">
+    <input id="qA2" placeholder="✗ תשובה שגויה">
+    <input id="qA3" placeholder="✗ תשובה שגויה">
+    <small>סדר התשובות מתערבב אוטומטית בטלוויזיה.</small>
+    <div class="row"><button id="qAddBtn" class="main">+ הוסף שאלה</button></div>
+    <h3>הוספה מרובה</h3>
+    <small>שורה לכל שאלה: שאלה | תשובה נכונה | שגויה | שגויה | שגויה</small>
+    <textarea id="qBulk" rows="6" placeholder="מה בירת צרפת? | פריז | לונדון | רומא | מדריד"></textarea>
+    <div class="row">
+      <button id="qBulkBtn">ייבא שאלות</button>
+      <button id="qResetBtn">↺ אפס "נשאלו"</button>
+    </div>
+    <div id="qList"></div>
+  </details>
+
+  <details id="sManage">
+    <summary>🎤 שירי עונש (<span id="sCount">…</span>)</summary>
+    <small>מוסיפים מהחיפוש (כפתור "🎤 עונש") או מקישור. כל שיר מוגרל פעם אחת; כשכולם הוגרלו הרשימה מתחילה מחדש.</small>
+    <div class="row"><button id="sResetBtn">↺ אפס הגרלות</button></div>
+    <div id="sList"></div>
+  </details>
 
   <h2>צימוד טלוויזיה</h2>
   <input id="pairCode" maxlength="10" placeholder="קוד שמופיע בטלוויזיה" dir="ltr">
@@ -289,8 +345,12 @@ function showAuth(ok) {
   if (ok) {
     refreshQueue().catch(function(e){ say('שגיאת תור: ' + e.message); });
     startAutoRefresh();
+    startQuizPolling();
+    loadQuestions();
+    loadPenaltySongs();
   } else {
     stopAutoRefresh();
+    stopQuizPolling();
   }
 }
 
@@ -364,8 +424,13 @@ function renderResults(videos) {
     add.textContent = '+ הוסף לתור';
     add.onclick = function() { addToQueue(song); };
 
+    var pen = document.createElement('button');
+    pen.textContent = '🎤 עונש';
+    pen.onclick = function() { addPenaltySong(song); };
+
     actions.appendChild(play);
     actions.appendChild(add);
+    actions.appendChild(pen);
     content.appendChild(title);
     content.appendChild(channel);
     content.appendChild(actions);
@@ -411,6 +476,234 @@ $('searchInput').addEventListener('keydown', function(e) {
   }
 });
 
+
+/* ---------------- Quiz ---------------- */
+
+var QUIZ_POLL_MS = 1500;
+var LETTERS = ['א', 'ב', 'ג', 'ד'];
+var PHASE_TEXT = {
+  idle: 'אין שאלה פעילה',
+  question: '❓ שאלה פתוחה — הקש/י את התשובה שנאמרה',
+  correct: '🎉 תשובה נכונה! אפשר לשאול עוד',
+  wrong: '😱 טעות — מגרילים שיר עונש',
+  timeout: '⏰ נגמר הזמן — מגרילים שיר עונש',
+  penalty: '🎤 שיר עונש מתנגן',
+  no_questions: '🤷 נגמרו השאלות — הוסף שאלות או אפס'
+};
+var quiz = null;
+var quizDeadline = 0;
+var quizPollTimer = null;
+var quizClockTimer = null;
+
+function quizCall(action, payload) {
+  return invoke('karaoke-quiz', Object.assign({ action:action }, payload || {}));
+}
+
+async function quizDo(action, payload, okText) {
+  try {
+    var r = await quizCall(action, payload);
+    if (r.quiz) renderQuiz(r.quiz);
+    if (okText) say(okText);
+    return r;
+  } catch(e) {
+    say('שגיאת חידון: ' + e.message);
+    return null;
+  }
+}
+
+function renderQuiz(q) {
+  var changed = !quiz || quiz.seq !== q.seq;
+  quiz = q;
+  var ph = q.phase;
+
+  $('quizStatus').textContent = (PHASE_TEXT[ph] || ph) +
+    (q.streak > 0 ? ' · 🔥 ' + q.streak + ' ברצף' : '') + (q.ad ? ' · 📺 פרסומת עכשיו' : '');
+
+  if (ph === 'question') {
+    var d = Date.now() + q.remaining_ms;
+    if (changed || Math.abs(d - quizDeadline) > 1000) quizDeadline = d;
+  }
+  updateQuizClock();
+
+  // Rebuild the answer buttons only on a phase change, so a tap is never lost.
+  if (changed) {
+    var shown = ph === 'question' || ph === 'correct' || ph === 'wrong' || ph === 'timeout';
+    $('quizQuestion').textContent = shown ? (q.question || '') : '';
+    var box = $('quizAnswers');
+    box.textContent = '';
+    if (shown) {
+      (q.answers || []).forEach(function(a, i) {
+        var b = document.createElement('button');
+        b.textContent = LETTERS[i] + '. ' + a + (i === q.correct ? '  ✓' : '');
+        if (ph !== 'question') {
+          b.disabled = true;
+          if (i === q.correct) b.className = 'right';
+          else if (i === q.chosen) b.className = 'wrong';
+        }
+        b.onclick = function() { quizDo('answer', { choice:i }); };
+        box.appendChild(b);
+      });
+    }
+  }
+
+  $('quizPenalty').textContent = (q.penalty && (ph === 'wrong' || ph === 'timeout' || ph === 'penalty'))
+    ? '🎤 שיר עונש: ' + q.penalty.title
+    : ((ph === 'wrong' || ph === 'timeout') ? 'אין שירי עונש ברשימה — בחר שיר ידנית' : '');
+
+  $('quizStartBtn').textContent = ph === 'correct' ? '➡ שאלה הבאה' : '❓ שאלה עכשיו';
+  $('quizStartBtn').disabled = ph === 'question';
+  $('quizNoAnswerBtn').disabled = ph !== 'question';
+  $('quizPenaltyBtn').disabled = !((ph === 'wrong' || ph === 'timeout') && q.penalty);
+  $('quizEndBtn').disabled = ph === 'idle';
+  if (document.activeElement !== $('quizAuto')) $('quizAuto').checked = !!q.auto_on_ad;
+  if (document.activeElement !== $('quizDuration')) $('quizDuration').value = q.duration_s;
+}
+
+function updateQuizClock() {
+  var el = $('quizTimer');
+  if (!quiz || quiz.phase !== 'question') { el.textContent = ''; return; }
+  var secs = Math.max(0, Math.ceil((quizDeadline - Date.now()) / 1000));
+  el.textContent = secs > 0 ? '⏳ ' + secs : '⏰';
+  el.className = secs <= 5 ? 'hurry' : '';
+}
+
+function refreshQuiz() {
+  return quizCall('state').then(function(r) { if (r.quiz) renderQuiz(r.quiz); });
+}
+
+function startQuizPolling() {
+  stopQuizPolling();
+  refreshQuiz().catch(function(e){ $('quizStatus').textContent = 'שגיאת חידון: ' + e.message; });
+  quizPollTimer = setInterval(function() {
+    if (document.visibilityState === 'visible') refreshQuiz().catch(function(){});
+  }, QUIZ_POLL_MS);
+  quizClockTimer = setInterval(updateQuizClock, 250);
+}
+
+function stopQuizPolling() {
+  clearInterval(quizPollTimer);
+  clearInterval(quizClockTimer);
+  quizPollTimer = quizClockTimer = null;
+}
+
+$('quizStartBtn').onclick = function() { quizDo('start'); };
+$('quizNoAnswerBtn').onclick = function() { quizDo('no_answer'); };
+$('quizPenaltyBtn').onclick = function() { quizDo('penalty_go', null, 'שיר העונש מתחיל'); };
+$('quizEndBtn').onclick = function() { quizDo('end', null, 'הסבב הסתיים'); };
+$('quizAuto').onchange = function() {
+  quizDo('settings', { auto_on_ad:$('quizAuto').checked }, 'נשמר');
+};
+$('quizDuration').onchange = function() {
+  var n = Math.round(Number($('quizDuration').value));
+  if (!(n >= 10 && n <= 120)) { say('זמן לשאלה: 10 עד 120 שניות'); return; }
+  quizDo('settings', { duration_s:n }, 'זמן לשאלה: ' + n + ' שניות');
+};
+
+/* ----- Question bank ----- */
+
+function itemRow(text, used, onDelete) {
+  var row = document.createElement('div');
+  row.className = 'song item' + (used ? ' used' : '');
+  var t = document.createElement('span');
+  t.textContent = text;
+  var b = document.createElement('button');
+  b.textContent = 'מחק';
+  b.onclick = onDelete;
+  row.appendChild(t);
+  row.appendChild(b);
+  return row;
+}
+
+async function loadQuestions() {
+  try {
+    var r = await quizCall('q_list');
+    var list = r.questions || [];
+    var fresh = list.filter(function(q){ return !q.used_at; }).length;
+    $('qCount').textContent = fresh + ' חדשות מתוך ' + list.length;
+    var box = $('qList');
+    box.textContent = '';
+    list.forEach(function(q) {
+      box.appendChild(itemRow((q.used_at ? '✓ ' : '') + q.question + ' — ' + q.answers[0], !!q.used_at,
+        async function() {
+          if (!confirm('למחוק את השאלה?')) return;
+          await quizDo('q_delete', { id:q.id });
+          loadQuestions();
+        }));
+    });
+  } catch(e) {
+    say('שגיאה בטעינת שאלות: ' + e.message);
+  }
+}
+
+$('qAddBtn').onclick = async function() {
+  var question = $('qText').value.trim();
+  var answers = ['qA0', 'qA1', 'qA2', 'qA3'].map(function(id){ return $(id).value.trim(); });
+  if (!question || answers.some(function(a){ return !a; })) {
+    say('צריך שאלה ו־4 תשובות');
+    return;
+  }
+  if (await quizDo('q_add', { question:question, answers:answers }, 'השאלה נוספה')) {
+    ['qText', 'qA0', 'qA1', 'qA2', 'qA3'].forEach(function(id){ $(id).value = ''; });
+    loadQuestions();
+  }
+};
+
+$('qBulkBtn').onclick = async function() {
+  var items = [], bad = 0;
+  $('qBulk').value.split('\n').forEach(function(line) {
+    if (!line.trim()) return;
+    var parts = line.split('|').map(function(x){ return x.trim(); });
+    if (parts.length !== 5 || parts.some(function(x){ return !x; })) { bad++; return; }
+    items.push({ question:parts[0], answers:parts.slice(1) });
+  });
+  if (!items.length) { say('לא נמצאו שורות תקינות'); return; }
+  if (items.length > 500) { say('עד 500 שאלות בכל ייבוא'); return; }
+  var r = await quizDo('q_bulk', { items:items });
+  if (r) {
+    say('יובאו ' + r.added + ' שאלות' + (bad ? (' · ' + bad + ' שורות לא תקינות דולגו') : ''));
+    $('qBulk').value = '';
+    loadQuestions();
+  }
+};
+
+$('qResetBtn').onclick = async function() {
+  if (!confirm('לסמן את כל השאלות כחדשות?')) return;
+  if (await quizDo('q_reset', null, 'כל השאלות חדשות שוב')) loadQuestions();
+};
+
+/* ----- Penalty songs ----- */
+
+async function loadPenaltySongs() {
+  try {
+    var r = await quizCall('s_list');
+    var list = r.songs || [];
+    var fresh = list.filter(function(s){ return !s.used_at; }).length;
+    $('sCount').textContent = fresh + ' שלא הוגרלו מתוך ' + list.length;
+    var box = $('sList');
+    box.textContent = '';
+    list.forEach(function(s) {
+      box.appendChild(itemRow((s.used_at ? '✓ ' : '') + s.title, !!s.used_at, async function() {
+        if (!confirm('למחוק את השיר מרשימת העונש?')) return;
+        await quizDo('s_delete', { id:s.id });
+        loadPenaltySongs();
+      }));
+    });
+  } catch(e) {
+    say('שגיאה בטעינת שירי עונש: ' + e.message);
+  }
+}
+
+async function addPenaltySong(song) {
+  if (await quizDo('s_add', { video_id:song.id, title:song.title }, 'נוסף לשירי עונש: ' + song.title)) {
+    loadPenaltySongs();
+  }
+}
+
+$('sResetBtn').onclick = async function() {
+  if (!confirm('לאפס את ההגרלות? כל השירים יחזרו להגרלה.')) return;
+  if (await quizDo('s_reset', null, 'כל שירי העונש חזרו להגרלה')) loadPenaltySongs();
+};
+
 /* ---------------- Buttons ---------------- */
 
 $('playBtn').onclick = function() {
@@ -434,7 +727,10 @@ $('nextBtn').onclick = async function() {
 };
 
 $('pauseBtn').onclick = function() { command('pause'); };
-$('skipAdBtn').onclick = function() { command('skip'); };
+$('penaltyAddBtn').onclick = function() {
+  var s = currentSong();
+  if (s) addPenaltySong(s);
+};
 $('resumeBtn').onclick = function() { command('resume'); };
 
 $('refreshBtn').onclick = function() {
@@ -489,6 +785,7 @@ client.auth.onAuthStateChange(function(event) {
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && !$('controls').hidden) {
     refreshQueue().catch(function(){});
+    refreshQuiz().catch(function(){});
   }
 });
 
