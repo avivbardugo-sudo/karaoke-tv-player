@@ -93,6 +93,7 @@ small { color:#cbd5e1 }
     <button id="quizPenaltyBtn">🎤 נגן שיר עונש</button>
     <button id="quizEndBtn">⏹ סיים סבב</button>
   </div>
+  <small>"סיים סבב" עוצר את החידון באמצע (מבטל שאלה פתוחה / את השאלה הבאה / שיר עונש שעוד לא התחיל) ומחזיר לשיר.</small>
   <label class="inline"><input type="checkbox" id="quizAuto"> שאלה אוטומטית בכל פרסומת</label>
   <label class="inline">זמן לשאלה (שניות): <input id="quizDuration" type="number" min="10" max="120" step="5" dir="ltr"></label>
 
@@ -554,7 +555,8 @@ function renderQuiz(q) {
   $('quizStartBtn').disabled = ph === 'question';
   $('quizNoAnswerBtn').disabled = ph !== 'question';
   $('quizPenaltyBtn').disabled = !((ph === 'wrong' || ph === 'timeout') && q.penalty);
-  $('quizEndBtn').disabled = ph === 'idle';
+  // Only something in progress can be stopped (question, run, pending penalty).
+  $('quizEndBtn').disabled = !(ph === 'question' || ph === 'correct' || ph === 'wrong' || ph === 'timeout');
   if (document.activeElement !== $('quizAuto')) $('quizAuto').checked = !!q.auto_on_ad;
   if (document.activeElement !== $('quizDuration')) $('quizDuration').value = q.duration_s;
 }
