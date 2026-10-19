@@ -182,11 +182,14 @@ function onYouTubeIframeAPIReady() {
 }
 
 // Ad detection. The IFrame API has no ad events, so use what an ad looks like
-// from outside: the player reports another video, or it says "playing" while
-// the song's own clock does not move (pre-roll and mid-roll ads).
+// from outside: the player reports another video, it stays "unstarted" while
+// something plays (seen on the Samsung TV during a pre-roll ad), or it says
+// "playing" while the song's own clock does not move.
+const UNSTARTED_AD_TICKS = 3;
 let adActive = false;
 let lastTime = -1;
 let frozenTicks = 0;
+let unstartedTicks = 0;
 
 function setAd(active, reason) {
     if (active === adActive) return;
@@ -197,6 +200,7 @@ function setAd(active, reason) {
 function resetAdDetector() {
     lastTime = -1;
     frozenTicks = 0;
+    unstartedTicks = 0;
     setAd(false, 'new-video');
 }
 
@@ -208,8 +212,14 @@ setInterval(function() {
         setAd(true, 'other-video');
         return;
     }
+    if (state() === YT.PlayerState.UNSTARTED) {
+        unstartedTicks++;
+        if (unstartedTicks >= UNSTARTED_AD_TICKS) setAd(true, 'unstarted');
+        return;
+    }
+    unstartedTicks = 0;
     if (state() !== YT.PlayerState.PLAYING) {
-        // Paused/buffering: keep the last verdict.
+        // Paused/buffering/cued: keep the last verdict.
         frozenTicks = 0;
         return;
     }
