@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Karaoke">
-<title>Karaoke Cloud Remote</title>
+<title>Karaoke Party</title>
 <style>
 :root { color-scheme:dark; font-family:system-ui,Arial; }
 /* Disable iOS double-tap zoom so repeated button taps don't resize the page. */
@@ -56,13 +56,15 @@ summary { font-size:19px;font-weight:bold;cursor:pointer;padding:6px 0 }
 #quizAnswers button.wrong { background:#7f1d1d;border-color:#f87171 }
 #quizPenalty { color:#fde68a;margin:6px 0 }
 .item.used span { opacity:.5 }
+.item.playing span { color:#fde68a;font-weight:bold }
+.item button { font-size:14px;padding:8px;min-height:38px }
 small { color:#cbd5e1 }
 </style>
 </head>
 <body>
 
-<h1>🎤 Karaoke Cloud</h1>
-<p>שליטה בטלוויזיה דרך Supabase — בלי שרת Ubuntu</p>
+<h1>🎤 Karaoke Party</h1>
+<p>קריוקי וחידון</p>
 
 <section id="loginPanel">
   <h2>כניסה</h2>
@@ -76,7 +78,7 @@ small { color:#cbd5e1 }
   <div class="row">
     <button id="pauseBtn">⏸ השהה</button>
     <button id="resumeBtn">▶ המשך</button>
-    <button id="nextBtn" class="main">⏭ הבא בתור</button>
+    <button id="nextBtn" class="main">⏭ הבא ברשימה</button>
   </div>
 
   <h2>🎯 חידון</h2>
@@ -110,17 +112,14 @@ small { color:#cbd5e1 }
   <input id="titleInput" placeholder="שם השיר (לא חובה)">
   <div class="row">
     <button id="playBtn" class="main">▶ נגן עכשיו</button>
-    <button id="addBtn">+ הוסף לתור</button>
-    <button id="penaltyAddBtn">🎤 לשירי עונש</button>
+    <button id="penaltyAddBtn">+ לרשימה</button>
   </div>
   <small>אפשר גם להדביק כאן קישור YouTube מלא.</small>
 
-  <h2>תור שירים בענן <small>(ממשיך גם כשהאייפון נעול)</small></h2>
-  <div id="queue">טוען...</div>
-  <div class="row">
-    <button id="refreshBtn">↻ רענן</button>
-    <button id="clearBtn">נקה תור</button>
-  </div>
+  <h2>🎵 רשימת שירים <small>(<span id="sCount">…</span>)</small></h2>
+  <small>מכאן מוגרלים שירי העונש. כל שיר מוגרל פעם אחת; כשכולם הוגרלו הרשימה מתחילה מחדש.</small>
+  <div id="sList"></div>
+  <div class="row"><button id="sResetBtn">↺ אפס הגרלות</button></div>
 
   <details id="qManage">
     <summary>📝 שאלות לחידון (<span id="qCount">…</span>)</summary>
@@ -141,16 +140,11 @@ small { color:#cbd5e1 }
     <div id="qList"></div>
   </details>
 
-  <details id="sManage">
-    <summary>🎤 שירי עונש (<span id="sCount">…</span>)</summary>
-    <small>מוסיפים מהחיפוש (כפתור "🎤 עונש") או מקישור. כל שיר מוגרל פעם אחת; כשכולם הוגרלו הרשימה מתחילה מחדש.</small>
-    <div class="row"><button id="sResetBtn">↺ אפס הגרלות</button></div>
-    <div id="sList"></div>
+  <details>
+    <summary>⚙️ צימוד טלוויזיה</summary>
+    <input id="pairCode" maxlength="10" placeholder="קוד שמופיע בטלוויזיה" dir="ltr">
+    <button id="pairBtn">אשר טלוויזיה</button>
   </details>
-
-  <h2>צימוד טלוויזיה</h2>
-  <input id="pairCode" maxlength="10" placeholder="קוד שמופיע בטלוויזיה" dir="ltr">
-  <button id="pairBtn">אשר טלוויזיה</button>
 
   <div class="row"><button id="logoutBtn">התנתק</button></div>
 </section>
@@ -208,71 +202,39 @@ async function command(cmd) {
     say('שולח לטלוויזיה...');
     var r = await invoke('karaoke-pairing', { action:'send', command:cmd });
     if (!r || r.status !== 'QUEUED') throw Error('תשובה לא צפויה');
-    say('נשלח לטלוויזיה. Command #' + r.command_id);
+    say(cmd === 'pause' ? 'השהיה' : 'ממשיך');
   } catch(e) {
     say('שגיאה: ' + e.message);
   }
 }
 
-/* ---------------- Queue ---------------- */
+/* ---------------- Now playing ---------------- */
+// The cloud queue still drives the TV (play / auto-next), but the admin sees
+// one list only: the song list below. The queue just tells what is playing.
+
+var playingVideo = null;
 
 async function refreshQueue() {
   var result = await queueCall('list');
   queue = Array.isArray(result.songs) ? result.songs : [];
-  renderQueue();
+  renderNowPlaying();
 }
 
-function renderQueue() {
-  var el = $('queue');
-  el.textContent = '';
-
+function renderNowPlaying() {
   var playing = queue.filter(function(s){ return s.status === 'playing'; })[0];
+  var id = playing ? playing.video_id : null;
   $('nowPlaying').textContent = playing ? ('▶ מתנגן: ' + playing.title) : 'לא מתנגן כרגע';
-
-  var pending = queue.filter(function(s){ return s.status === 'pending'; });
-  if (!pending.length) {
-    el.textContent = 'התור ריק';
-    return;
-  }
-
-  pending.forEach(function(song, i) {
-    var row = document.createElement('div');
-    row.className = 'song';
-
-    var txt = document.createElement('span');
-    txt.textContent = (i+1) + '. ' + song.title;
-
-    var b = document.createElement('button');
-    b.textContent = 'הסר';
-    b.onclick = async function() {
-      try {
-        await queueCall('remove', { queue_id:song.id });
-        await refreshQueue();
-      } catch(e) {
-        say('שגיאה: ' + e.message);
-      }
-    };
-
-    row.appendChild(txt);
-    row.appendChild(b);
-    el.appendChild(row);
-  });
-}
-
-async function addToQueue(song) {
-  try {
-    say('מוסיף לתור...');
-    var r = await queueCall('add', { video_id:song.id, title:song.title });
-    await refreshQueue();
-    say(r.started ? ('מתחיל לנגן: ' + song.title) : ('נוסף לתור: ' + song.title));
-  } catch(e) {
-    say(e.message === 'QUEUE_FULL' ? 'התור מלא (100 שירים)' : 'שגיאת תור: ' + e.message);
+  if (id !== playingVideo) {
+    playingVideo = id;
+    renderSongList();
   }
 }
 
 async function playNow(song) {
   try {
     say('מפעיל בטלוויזיה...');
+    // Leftovers in the hidden queue would start by themselves after this song.
+    await queueCall('clear');
     await queueCall('play_now', { video_id:song.id, title:song.title });
     await refreshQueue();
     say('מנגן: ' + song.title);
@@ -342,7 +304,7 @@ function currentSong() {
 function showAuth(ok) {
   $('loginPanel').hidden = !!ok;
   $('controls').hidden = !ok;
-  say(ok ? 'מחובר — מוכן לניגון' : 'יש להתחבר');
+  say(ok ? 'מחובר ✅' : 'יש להתחבר');
   if (ok) {
     refreshQueue().catch(function(e){ say('שגיאת תור: ' + e.message); });
     startAutoRefresh();
@@ -422,16 +384,11 @@ function renderResults(videos) {
     play.onclick = function() { playNow(song); };
 
     var add = document.createElement('button');
-    add.textContent = '+ הוסף לתור';
-    add.onclick = function() { addToQueue(song); };
-
-    var pen = document.createElement('button');
-    pen.textContent = '🎤 עונש';
-    pen.onclick = function() { addPenaltySong(song); };
+    add.textContent = '+ לרשימה';
+    add.onclick = function() { addPenaltySong(song); };
 
     actions.appendChild(play);
     actions.appendChild(add);
-    actions.appendChild(pen);
     content.appendChild(title);
     content.appendChild(channel);
     content.appendChild(actions);
@@ -460,7 +417,7 @@ async function searchVideos() {
       throw Error('תגובה לא תקינה משרת החיפוש');
     }
     searchStatus('נמצאו ' + data.videos.length +
-                 ' תוצאות. ייתכן שסרטונים מסוימים אינם ניתנים להטמעה.');
+                 ' תוצאות');
     renderResults(data.videos);
   } catch(e) {
     searchStatus('שגיאת חיפוש: ' + e.message);
@@ -603,15 +560,22 @@ $('quizDuration').onchange = function() {
 
 /* ----- Question bank ----- */
 
-function itemRow(text, used, onDelete) {
+function itemRow(text, cls, onDelete, onPlay) {
   var row = document.createElement('div');
-  row.className = 'song item' + (used ? ' used' : '');
+  row.className = 'song item ' + (cls || '');
   var t = document.createElement('span');
   t.textContent = text;
+  row.appendChild(t);
+  if (onPlay) {
+    var p = document.createElement('button');
+    p.className = 'main';
+    p.textContent = '▶';
+    p.onclick = onPlay;
+    row.appendChild(p);
+  }
   var b = document.createElement('button');
   b.textContent = 'מחק';
   b.onclick = onDelete;
-  row.appendChild(t);
   row.appendChild(b);
   return row;
 }
@@ -625,7 +589,7 @@ async function loadQuestions() {
     var box = $('qList');
     box.textContent = '';
     list.forEach(function(q) {
-      box.appendChild(itemRow((q.used_at ? '✓ ' : '') + q.question + ' — ' + q.answers[0], !!q.used_at,
+      box.appendChild(itemRow((q.used_at ? '✓ ' : '') + q.question + ' — ' + q.answers[0], q.used_at ? 'used' : '',
         async function() {
           if (!confirm('למחוק את השאלה?')) return;
           await quizDo('q_delete', { id:q.id });
@@ -673,37 +637,60 @@ $('qResetBtn').onclick = async function() {
   if (await quizDo('q_reset', null, 'כל השאלות חדשות שוב')) loadQuestions();
 };
 
-/* ----- Penalty songs ----- */
+/* ----- Song list (penalty draws + playlist) ----- */
+
+var songList = [];
 
 async function loadPenaltySongs() {
   try {
     var r = await quizCall('s_list');
-    var list = r.songs || [];
-    var fresh = list.filter(function(s){ return !s.used_at; }).length;
-    $('sCount').textContent = fresh + ' שלא הוגרלו מתוך ' + list.length;
-    var box = $('sList');
-    box.textContent = '';
-    list.forEach(function(s) {
-      box.appendChild(itemRow((s.used_at ? '✓ ' : '') + s.title, !!s.used_at, async function() {
-        if (!confirm('למחוק את השיר מרשימת העונש?')) return;
-        await quizDo('s_delete', { id:s.id });
-        loadPenaltySongs();
-      }));
-    });
+    songList = r.songs || [];
+    renderSongList();
   } catch(e) {
-    say('שגיאה בטעינת שירי עונש: ' + e.message);
+    say('שגיאה בטעינת רשימת השירים: ' + e.message);
   }
 }
 
+function renderSongList() {
+  var fresh = songList.filter(function(s){ return !s.used_at; }).length;
+  $('sCount').textContent = songList.length + ' שירים · ' + fresh + ' עוד לא הוגרלו';
+  var box = $('sList');
+  box.textContent = '';
+  if (!songList.length) {
+    box.textContent = 'הרשימה ריקה — הוסף שירים מהחיפוש';
+    return;
+  }
+  songList.forEach(function(s, i) {
+    var playing = s.video_id === playingVideo;
+    var cls = playing ? 'playing' : (s.used_at ? 'used' : '');
+    box.appendChild(itemRow((playing ? '▶ ' : (i + 1) + '. ') + s.title, cls,
+      async function() {
+        if (!confirm('למחוק את השיר מהרשימה?')) return;
+        await quizDo('s_delete', { id:s.id });
+        loadPenaltySongs();
+      },
+      function() { playNow({ id:s.video_id, title:s.title }); }));
+  });
+}
+
+// Next song in list order after the one playing (wraps around).
+function nextInList() {
+  if (!songList.length) { say('הרשימה ריקה'); return; }
+  var idx = -1;
+  songList.forEach(function(s, i) { if (s.video_id === playingVideo) idx = i; });
+  var next = songList[(idx + 1) % songList.length];
+  playNow({ id:next.video_id, title:next.title });
+}
+
 async function addPenaltySong(song) {
-  if (await quizDo('s_add', { video_id:song.id, title:song.title }, 'נוסף לשירי עונש: ' + song.title)) {
+  if (await quizDo('s_add', { video_id:song.id, title:song.title }, 'נוסף לרשימה: ' + song.title)) {
     loadPenaltySongs();
   }
 }
 
 $('sResetBtn').onclick = async function() {
   if (!confirm('לאפס את ההגרלות? כל השירים יחזרו להגרלה.')) return;
-  if (await quizDo('s_reset', null, 'כל שירי העונש חזרו להגרלה')) loadPenaltySongs();
+  if (await quizDo('s_reset', null, 'כל השירים חזרו להגרלה')) loadPenaltySongs();
 };
 
 /* ---------------- Buttons ---------------- */
@@ -713,20 +700,7 @@ $('playBtn').onclick = function() {
   if (s) playNow(s);
 };
 
-$('addBtn').onclick = function() {
-  var s = currentSong();
-  if (s) addToQueue(s);
-};
-
-$('nextBtn').onclick = async function() {
-  try {
-    var r = await queueCall('next');
-    await refreshQueue();
-    say(r.next ? 'מנגן: ' + r.next.next_title : 'התור ריק');
-  } catch(e) {
-    say('שגיאה: ' + e.message);
-  }
-};
+$('nextBtn').onclick = nextInList;
 
 $('pauseBtn').onclick = function() { command('pause'); };
 $('penaltyAddBtn').onclick = function() {
@@ -734,22 +708,6 @@ $('penaltyAddBtn').onclick = function() {
   if (s) addPenaltySong(s);
 };
 $('resumeBtn').onclick = function() { command('resume'); };
-
-$('refreshBtn').onclick = function() {
-  refreshQueue().then(function(){ say('התור עודכן'); })
-                .catch(function(e){ say('שגיאה: ' + e.message); });
-};
-
-$('clearBtn').onclick = async function() {
-  if (!confirm('לנקות את התור בענן?')) return;
-  try {
-    await queueCall('clear');
-    await refreshQueue();
-    say('התור נוקה');
-  } catch(e) {
-    say('שגיאה: ' + e.message);
-  }
-};
 
 $('pairBtn').onclick = async function() {
   var code = $('pairCode').value.trim().toUpperCase();
@@ -759,7 +717,7 @@ $('pairBtn').onclick = async function() {
   }
   try {
     var r = await invoke('karaoke-pairing', { action:'approve', code:code });
-    say('סטטוס צימוד: ' + r.status);
+    say(r.status === 'APPROVED' ? 'הטלוויזיה אושרה ✅' : 'סטטוס צימוד: ' + r.status);
   } catch(e) {
     say('שגיאת צימוד: ' + e.message);
   }
@@ -767,7 +725,7 @@ $('pairBtn').onclick = async function() {
 
 /* ---------------- Start ---------------- */
 
-renderQueue();
+renderNowPlaying();
 
 if (!window.supabase) {
   say('ספריית Supabase לא נטענה');
