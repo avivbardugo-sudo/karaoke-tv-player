@@ -97,6 +97,7 @@ small { color:#cbd5e1 }
   </div>
   <div class="row">
     <button id="quizPenaltyBtn">🎤 נגן שיר עונש</button>
+    <button id="quizRedrawBtn">🎲 הגרל שיר אחר</button>
     <button id="quizEndBtn">⏹ סיים משחק</button>
   </div>
   <small>"התחל משחק" מאפס שאלות והגרלות ומציג את החוקים. בזמן המשחק הטלוויזיה מכינה ברקע שיר עונש בלי פרסומת. "סיים משחק" חוזר לקריוקי רגיל.</small>
@@ -402,6 +403,8 @@ var quiz = null;
 var quizDeadline = 0;
 var quizPollTimer = null;
 var quizClockTimer = null;
+var songsTimer = null;
+var SONGS_REFRESH_MS = 20000;
 
 function quizCall(action, payload) {
   return invoke('karaoke-quiz', Object.assign({ action:action }, payload || {}));
@@ -465,6 +468,7 @@ function renderQuiz(q) {
   $('quizStartBtn').disabled = ph === 'question';
   $('quizNoAnswerBtn').disabled = ph !== 'question';
   $('quizPenaltyBtn').disabled = !((ph === 'wrong' || ph === 'timeout') && q.penalty);
+  $('quizRedrawBtn').disabled = !((ph === 'wrong' || ph === 'timeout' || ph === 'penalty') && q.penalty);
   // Only something in progress can be stopped (question, run, pending penalty).
   $('quizEndBtn').disabled = !(q.game_on || ph === 'rules');
   if (document.activeElement !== $('quizDuration')) $('quizDuration').value = q.duration_s;
@@ -489,11 +493,16 @@ function startQuizPolling() {
     if (document.visibilityState === 'visible') refreshQuiz().catch(function(){});
   }, QUIZ_POLL_MS);
   quizClockTimer = setInterval(updateQuizClock, 250);
+  // The TV re-scans its USB drive; pick up added/removed songs.
+  songsTimer = setInterval(function() {
+    if (document.visibilityState === 'visible') loadPenaltySongs();
+  }, SONGS_REFRESH_MS);
 }
 
 function stopQuizPolling() {
   clearInterval(quizPollTimer);
   clearInterval(quizClockTimer);
+  clearInterval(songsTimer);
   quizPollTimer = quizClockTimer = null;
 }
 
@@ -504,6 +513,7 @@ $('slideshowBtn').onclick = function() {
 $('quizRulesBtn').onclick = function() { quizDo('rules', null, 'החוקים מוצגים בטלוויזיה'); };
 $('quizStartBtn').onclick = function() { quizDo('start'); };
 $('quizNoAnswerBtn').onclick = function() { quizDo('no_answer'); };
+$('quizRedrawBtn').onclick = function() { quizDo('redraw', null, 'מגרילים שיר אחר...'); };
 $('quizPenaltyBtn').onclick = function() { quizDo('penalty_go', null, 'שיר העונש מתחיל'); };
 $('quizEndBtn').onclick = function() {
   if (!confirm('לסיים את המשחק ולחזור לקריוקי רגיל?')) return;
@@ -692,6 +702,7 @@ document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && !$('controls').hidden) {
     refreshQueue().catch(function(){});
     refreshQuiz().catch(function(){});
+    loadPenaltySongs();
   }
 });
 
