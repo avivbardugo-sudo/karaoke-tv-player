@@ -102,13 +102,15 @@ small { color:#cbd5e1 }
   <small>"התחל משחק" מאפס שאלות והגרלות ומציג את החוקים. בזמן המשחק הטלוויזיה מכינה ברקע שיר עונש בלי פרסומת. "סיים משחק" חוזר לקריוקי רגיל.</small>
   <label class="inline">זמן לשאלה (שניות): <input id="quizDuration" type="number" min="10" max="120" step="5" dir="ltr"></label>
 
-  <h2>חיפוש שירים ב־YouTube</h2>
+  <details id="searchPanel">
+    <summary>🔎 חיפוש שירים ב־YouTube</summary>
   <div class="row">
     <input id="searchInput" placeholder="שם שיר, זמר או karaoke" aria-label="חיפוש YouTube">
     <button id="searchBtn" class="main">🔎 חפש</button>
   </div>
   <div id="searchStatus" role="status" aria-live="polite"></div>
   <div id="searchResults"></div>
+  </details>
 
   <h2>🎵 שירים מה-USB <small>(<span id="sCount">…</span>)</small></h2>
   <small>הרשימה מתעדכנת מהדיסק שבטלוויזיה (תיקייה Karoke 40/Karoke songs). להוספה או הסרה — מעתיקים או מוחקים קבצים בדיסק ופותחים מחדש את האפליקציה בטלוויזיה. מכאן מוגרלים שירי העונש, כל שיר פעם אחת.</small>
