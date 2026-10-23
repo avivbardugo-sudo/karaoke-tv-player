@@ -495,7 +495,7 @@ function startQuizPolling() {
   quizClockTimer = setInterval(updateQuizClock, 250);
   // The TV re-scans its USB drive; pick up added/removed songs.
   songsTimer = setInterval(function() {
-    if (document.visibilityState === 'visible') loadPenaltySongs();
+    if (document.visibilityState === 'visible') loadPenaltySongs(true);
   }, SONGS_REFRESH_MS);
 }
 
@@ -610,13 +610,15 @@ $('qResetBtn').onclick = async function() {
 
 var songList = [];
 
-async function loadPenaltySongs() {
+// silent: background refresh - a dropped request (phone just woke up) is
+// simply retried on the next tick instead of showing an error.
+async function loadPenaltySongs(silent) {
   try {
     var r = await quizCall('s_list');
     songList = r.songs || [];
     renderSongList();
   } catch(e) {
-    say('שגיאה בטעינת רשימת השירים: ' + e.message);
+    if (!silent) say('שגיאה בטעינת רשימת השירים: ' + e.message);
   }
 }
 
@@ -702,7 +704,7 @@ document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && !$('controls').hidden) {
     refreshQueue().catch(function(){});
     refreshQuiz().catch(function(){});
-    loadPenaltySongs();
+    loadPenaltySongs(true);
   }
 });
 
