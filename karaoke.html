@@ -88,6 +88,9 @@ small { color:#cbd5e1 }
   <div id="quizAnswers"></div>
   <div id="quizPenalty"></div>
   <div class="row">
+    <button id="quizRulesBtn">🎬 התחל משחק</button>
+  </div>
+  <div class="row">
     <button id="quizStartBtn" class="main">❓ שאלה עכשיו</button>
     <button id="quizNoAnswerBtn">⏱ לא ענה</button>
   </div>
@@ -441,6 +444,7 @@ var QUIZ_POLL_MS = 1500;
 var LETTERS = ['א', 'ב', 'ג', 'ד'];
 var PHASE_TEXT = {
   idle: 'אין שאלה פעילה',
+  rules: '📜 החוקים מוצגים בטלוויזיה — "שאלה ראשונה" מתחיל את המשחק',
   question: '❓ שאלה פתוחה — הקש/י את התשובה שנאמרה',
   correct: '🎉 תשובה נכונה! השאלה הבאה עולה בעוד רגע',
   wrong: '😱 טעות — מגרילים שיר עונש',
@@ -508,12 +512,15 @@ function renderQuiz(q) {
     ? '🎤 שיר עונש: ' + q.penalty.title
     : ((ph === 'wrong' || ph === 'timeout') ? 'אין שירי עונש ברשימה — בחר שיר ידנית' : '');
 
-  $('quizStartBtn').textContent = ph === 'correct' ? '➡ שאלה הבאה' : '❓ שאלה עכשיו';
+  $('quizStartBtn').textContent = ph === 'correct' ? '➡ שאלה הבאה'
+    : (ph === 'rules' ? '❓ שאלה ראשונה' : '❓ שאלה עכשיו');
+  $('quizRulesBtn').disabled = ph === 'question' || ph === 'rules';
   $('quizStartBtn').disabled = ph === 'question';
   $('quizNoAnswerBtn').disabled = ph !== 'question';
   $('quizPenaltyBtn').disabled = !((ph === 'wrong' || ph === 'timeout') && q.penalty);
   // Only something in progress can be stopped (question, run, pending penalty).
-  $('quizEndBtn').disabled = !(ph === 'question' || ph === 'correct' || ph === 'wrong' || ph === 'timeout');
+  $('quizEndBtn').disabled = !(ph === 'rules' || ph === 'question' || ph === 'correct' ||
+                               ph === 'wrong' || ph === 'timeout');
   if (document.activeElement !== $('quizAuto')) $('quizAuto').checked = !!q.auto_on_ad;
   if (document.activeElement !== $('quizDuration')) $('quizDuration').value = q.duration_s;
 }
@@ -545,6 +552,7 @@ function stopQuizPolling() {
   quizPollTimer = quizClockTimer = null;
 }
 
+$('quizRulesBtn').onclick = function() { quizDo('rules', null, 'החוקים מוצגים בטלוויזיה'); };
 $('quizStartBtn').onclick = function() { quizDo('start'); };
 $('quizNoAnswerBtn').onclick = function() { quizDo('no_answer'); };
 $('quizPenaltyBtn').onclick = function() { quizDo('penalty_go', null, 'שיר העונש מתחיל'); };
