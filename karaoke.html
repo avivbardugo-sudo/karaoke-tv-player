@@ -96,10 +96,9 @@ small { color:#cbd5e1 }
   </div>
   <div class="row">
     <button id="quizPenaltyBtn">🎤 נגן שיר עונש</button>
-    <button id="quizEndBtn">⏹ סיים סבב</button>
+    <button id="quizEndBtn">⏹ סיים משחק</button>
   </div>
-  <small>"סיים סבב" עוצר את החידון באמצע (מבטל שאלה פתוחה / את השאלה הבאה / שיר עונש שעוד לא התחיל) ומחזיר לשיר.</small>
-  <label class="inline"><input type="checkbox" id="quizAuto"> שאלה אוטומטית בכל פרסומת</label>
+  <small>"התחל משחק" מאפס שאלות והגרלות ומציג את החוקים. בזמן המשחק הטלוויזיה מכינה ברקע שיר עונש בלי פרסומת. "סיים משחק" חוזר לקריוקי רגיל.</small>
   <label class="inline">זמן לשאלה (שניות): <input id="quizDuration" type="number" min="10" max="120" step="5" dir="ltr"></label>
 
   <h2>חיפוש שירים ב־YouTube</h2>
@@ -519,9 +518,7 @@ function renderQuiz(q) {
   $('quizNoAnswerBtn').disabled = ph !== 'question';
   $('quizPenaltyBtn').disabled = !((ph === 'wrong' || ph === 'timeout') && q.penalty);
   // Only something in progress can be stopped (question, run, pending penalty).
-  $('quizEndBtn').disabled = !(ph === 'rules' || ph === 'question' || ph === 'correct' ||
-                               ph === 'wrong' || ph === 'timeout');
-  if (document.activeElement !== $('quizAuto')) $('quizAuto').checked = !!q.auto_on_ad;
+  $('quizEndBtn').disabled = !(q.game_on || ph === 'rules');
   if (document.activeElement !== $('quizDuration')) $('quizDuration').value = q.duration_s;
 }
 
@@ -556,9 +553,9 @@ $('quizRulesBtn').onclick = function() { quizDo('rules', null, 'החוקים מ�
 $('quizStartBtn').onclick = function() { quizDo('start'); };
 $('quizNoAnswerBtn').onclick = function() { quizDo('no_answer'); };
 $('quizPenaltyBtn').onclick = function() { quizDo('penalty_go', null, 'שיר העונש מתחיל'); };
-$('quizEndBtn').onclick = function() { quizDo('end', null, 'הסבב הסתיים'); };
-$('quizAuto').onchange = function() {
-  quizDo('settings', { auto_on_ad:$('quizAuto').checked }, 'נשמר');
+$('quizEndBtn').onclick = function() {
+  if (!confirm('לסיים את המשחק ולחזור לקריוקי רגיל?')) return;
+  quizDo('end', null, 'המשחק הסתיים');
 };
 $('quizDuration').onchange = function() {
   var n = Math.round(Number($('quizDuration').value));

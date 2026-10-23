@@ -23,9 +23,10 @@ html, body, #player {
 
 // Embedded by the Samsung Tizen app (origin file://).
 // Parent -> player: load_youtube{videoId}, pause, resume, toggle, seek{seconds}, restart, reload,
-//                   mute, unmute
+//                   mute, unmute, hold_at_start, stop
 // Player -> parent: karaoke_ready, karaoke_state{state,videoId}, karaoke_ended{videoId},
-//                   karaoke_error{code,videoId}, karaoke_ad{active,reason,videoId}
+//                   karaoke_error{code,videoId}, karaoke_ad{active,reason,videoId},
+//                   karaoke_started{videoId} (the song itself plays - no ad in front)
 // Uses youtube.com so a signed-in YouTube Premium account applies (no ads);
 // ?nocookie=1 switches to youtube-nocookie.com (privacy-enhanced, ignores the account).
 
@@ -79,6 +80,16 @@ function handle(msg) {
     case 'unmute':
         player.unMute();
         player.setVolume(100);
+        return;
+    case 'hold_at_start':
+        // Prepared song: its ad (if any) is over - wait at 0:00 for the reveal.
+        player.pauseVideo();
+        player.seekTo(0, true);
+        return;
+    case 'stop':
+        currentVideoId = null;
+        resetAdDetector();
+        player.stopVideo();
         return;
     case 'pause':
         pauseReliably();
@@ -190,6 +201,7 @@ let adActive = false;
 let lastTime = -1;
 let frozenTicks = 0;
 let unstartedTicks = 0;
+let startedSent = false;
 
 function setAd(active, reason) {
     if (active === adActive) return;
@@ -201,6 +213,7 @@ function resetAdDetector() {
     lastTime = -1;
     frozenTicks = 0;
     unstartedTicks = 0;
+    startedSent = false;
     setAd(false, 'new-video');
 }
 
@@ -230,6 +243,10 @@ setInterval(function() {
     } else {
         frozenTicks = 0;
         setAd(false, 'clock-moves');
+        if (!startedSent && t > 0.3) {
+            startedSent = true;
+            toParent({ type: 'karaoke_started', videoId: currentVideoId });
+        }
     }
     lastTime = t;
 }, 1000);
