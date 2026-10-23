@@ -89,6 +89,7 @@ small { color:#cbd5e1 }
   <div id="quizPenalty"></div>
   <div class="row">
     <button id="quizRulesBtn">🎬 התחל משחק</button>
+    <button id="slideshowBtn">🖼️ הצג מצגת תמונות</button>
   </div>
   <div class="row">
     <button id="quizStartBtn" class="main">❓ שאלה עכשיו</button>
@@ -114,12 +115,11 @@ small { color:#cbd5e1 }
   <input id="titleInput" placeholder="שם השיר (לא חובה)">
   <div class="row">
     <button id="playBtn" class="main">▶ נגן עכשיו</button>
-    <button id="penaltyAddBtn">+ לרשימה</button>
   </div>
   <small>אפשר גם להדביק כאן קישור YouTube מלא.</small>
 
-  <h2>🎵 רשימת שירים <small>(<span id="sCount">…</span>)</small></h2>
-  <small>מכאן מוגרלים שירי העונש. כל שיר מוגרל פעם אחת; כשכולם הוגרלו הרשימה מתחילה מחדש.</small>
+  <h2>🎵 שירים מה-USB <small>(<span id="sCount">…</span>)</small></h2>
+  <small>הרשימה מתעדכנת מהדיסק שבטלוויזיה (תיקייה Karoke 40/Karoke songs). להוספה או הסרה — מעתיקים או מוחקים קבצים בדיסק ופותחים מחדש את האפליקציה בטלוויזיה. מכאן מוגרלים שירי העונש, כל שיר פעם אחת.</small>
   <div id="sList"></div>
   <div class="row"><button id="sResetBtn">↺ אפס הגרלות</button></div>
 
@@ -385,12 +385,7 @@ function renderResults(videos) {
     play.textContent = '▶ נגן עכשיו';
     play.onclick = function() { playNow(song); };
 
-    var add = document.createElement('button');
-    add.textContent = '+ לרשימה';
-    add.onclick = function() { addPenaltySong(song); };
-
     actions.appendChild(play);
-    actions.appendChild(add);
     content.appendChild(title);
     content.appendChild(channel);
     content.appendChild(actions);
@@ -514,6 +509,7 @@ function renderQuiz(q) {
   $('quizStartBtn').textContent = ph === 'correct' ? '➡ שאלה הבאה'
     : (ph === 'rules' ? '❓ שאלה ראשונה' : '❓ שאלה עכשיו');
   $('quizRulesBtn').disabled = ph === 'question' || ph === 'rules';
+  $('slideshowBtn').textContent = q.slideshow ? '⏹ עצור מצגת' : '🖼️ הצג מצגת תמונות';
   $('quizStartBtn').disabled = ph === 'question';
   $('quizNoAnswerBtn').disabled = ph !== 'question';
   $('quizPenaltyBtn').disabled = !((ph === 'wrong' || ph === 'timeout') && q.penalty);
@@ -549,6 +545,10 @@ function stopQuizPolling() {
   quizPollTimer = quizClockTimer = null;
 }
 
+$('slideshowBtn').onclick = function() {
+  var on = !(quiz && quiz.slideshow);
+  quizDo('slideshow', { on:on }, on ? 'המצגת מוצגת בטלוויזיה' : 'המצגת נעצרה');
+};
 $('quizRulesBtn').onclick = function() { quizDo('rules', null, 'החוקים מוצגים בטלוויזיה'); };
 $('quizStartBtn').onclick = function() { quizDo('start'); };
 $('quizNoAnswerBtn').onclick = function() { quizDo('no_answer'); };
@@ -578,10 +578,12 @@ function itemRow(text, cls, onDelete, onPlay) {
     p.onclick = onPlay;
     row.appendChild(p);
   }
-  var b = document.createElement('button');
-  b.textContent = 'מחק';
-  b.onclick = onDelete;
-  row.appendChild(b);
+  if (onDelete) {
+    var b = document.createElement('button');
+    b.textContent = 'מחק';
+    b.onclick = onDelete;
+    row.appendChild(b);
+  }
   return row;
 }
 
@@ -662,18 +664,13 @@ function renderSongList() {
   var box = $('sList');
   box.textContent = '';
   if (!songList.length) {
-    box.textContent = 'הרשימה ריקה — הוסף שירים מהחיפוש';
+    box.textContent = 'אין שירים — חבר לטלוויזיה דיסק עם התיקייה Karoke 40/Karoke songs';
     return;
   }
   songList.forEach(function(s, i) {
     var playing = s.video_id === playingVideo;
     var cls = playing ? 'playing' : (s.used_at ? 'used' : '');
-    box.appendChild(itemRow((playing ? '▶ ' : (i + 1) + '. ') + s.title, cls,
-      async function() {
-        if (!confirm('למחוק את השיר מהרשימה?')) return;
-        await quizDo('s_delete', { id:s.id });
-        loadPenaltySongs();
-      },
+    box.appendChild(itemRow((playing ? '▶ ' : (i + 1) + '. ') + s.title, cls, null,
       function() { playNow({ id:s.video_id, title:s.title }); }));
   });
 }
@@ -708,10 +705,6 @@ $('playBtn').onclick = function() {
 $('nextBtn').onclick = nextInList;
 
 $('pauseBtn').onclick = function() { command('pause'); };
-$('penaltyAddBtn').onclick = function() {
-  var s = currentSong();
-  if (s) addPenaltySong(s);
-};
 $('resumeBtn').onclick = function() { command('resume'); };
 
 $('pairBtn').onclick = async function() {
