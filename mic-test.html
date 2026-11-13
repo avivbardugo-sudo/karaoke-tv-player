@@ -95,7 +95,12 @@ function yin(b, sr) {
   for (let tau = 1; tau <= maxLag; tau++) { run += D[tau]; D[tau] = run > 0 ? D[tau] * tau / run : 1; }
   let tau = -1;
   for (let t = minLag; t < maxLag; t++) {
-    if (D[t] < 0.15) { while (t + 1 < maxLag && D[t + 1] < D[t]) t++; tau = t; break; }
+    if (D[t] < 0.25) { while (t + 1 < maxLag && D[t + 1] < D[t]) t++; tau = t; break; }
+  }
+  if (tau < 0) {                             /* no clear dip: accept the global minimum if decent */
+    let best = 1;
+    for (let t = minLag; t < maxLag; t++) if (D[t] < best) { best = D[t]; tau = t; }
+    if (best > 0.4) tau = -1;
   }
   if (tau < 2) return -1;
   const a = D[tau - 1], c = D[tau], e = D[tau + 1], den = 2 * (2 * c - a - e);
@@ -151,7 +156,7 @@ function loop(now) {
     if (el >= CAL_S) {
       const s = calDb.slice().sort((a, b) => a - b);
       baseDb = s[Math.floor(s.length * 0.7)];
-      thrDb = baseDb + 6;
+      thrDb = baseDb + 5;
       phase = 'count'; t0 = now;
     }
     return;
@@ -166,7 +171,7 @@ function loop(now) {
   const f = db > thrDb ? yin(buf, ctx.sampleRate) : -1;
   const voiced = f > 0;
   const m = voiced ? midiOf(f) : null;
-  frames.push({ t: el, db, voiced, m });
+  frames.push({ t: el, db, voiced, m, loud: db > thrDb });
   trail.push({ t: el, m, v: db > thrDb });
   while (trail.length && el - trail[0].t > 6) trail.shift();
 
@@ -210,11 +215,11 @@ function score() {
   /* volume: mean dB above background of voiced frames, 3 dB -> 0, 15 dB -> 100 */
   const above = v.length ? v.reduce((s, f) => s + (f.db - baseDb), 0) / v.length : 0;
   const vol = clamp01((above - 3) / 12) * 100;
-  /* continuity: share of seconds that are >=40% voiced */
+  /* continuity: share of seconds with voice energy >=30% of the time (breaths are allowed) */
   const secs = Math.max(1, Math.ceil(frames[frames.length - 1]?.t || 1));
   const per = Array.from({ length: secs }, () => [0, 0]);
-  for (const f of frames) { const i = Math.min(secs - 1, Math.floor(f.t)); per[i][1]++; if (f.voiced) per[i][0]++; }
-  const good = per.filter(p => p[1] && p[0] / p[1] >= 0.4).length;
+  for (const f of frames) { const i = Math.min(secs - 1, Math.floor(f.t)); per[i][1]++; if (f.loud || f.voiced) per[i][0]++; }
+  const good = per.filter(p => p[1] && p[0] / p[1] >= 0.3).length;
   const con = good / secs * 100;
   /* stability: median frame-to-frame pitch change inside a note (<100 cents), 8 c -> 100, 45 c -> 0 */
   const jit = [];
@@ -226,7 +231,8 @@ function score() {
   const med = jit.length ? jit[Math.floor(jit.length / 2)] : 45;
   const sta = clamp01((45 - med) / 37) * 100;
   const tot = Math.round(0.3 * vol + 0.35 * con + 0.35 * sta);
-  return { vol, con, sta, tot, above, med, voicedPct: v.length / total * 100 };
+  const loudPct = frames.filter(f => f.loud).length / total * 100;
+  return { vol, con, sta, tot, above, med, loudPct, voicedPct: v.length / total * 100 };
 }
 
 function finish() {
@@ -241,7 +247,7 @@ function finish() {
   set('Vol', 0); set('Con', 0); set('Sta', 0);
   setTimeout(() => { set('Vol', s.vol); set('Con', s.con); set('Sta', s.sta); }, 50);
   $('dbg').textContent = `רקע ${baseDb.toFixed(0)} dB · מעל הרקע ${s.above.toFixed(1)} dB · ` +
-    `זמן עם צליל ${s.voicedPct.toFixed(0)}% · רעד חציוני ${s.med.toFixed(0)} סנט · ${frames.length} דגימות · ${ctx ? '' : ''}`;
+    `קול ${s.loudPct.toFixed(0)}% · צליל ${s.voicedPct.toFixed(0)}% · רעד חציוני ${s.med.toFixed(0)} סנט · ${frames.length} דגימות`;
 }
 
 function cleanup() {
