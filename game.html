@@ -83,7 +83,7 @@
   <div class="big" id="resName"></div>
   <div id="resScore"></div>
   <div class="big" id="resVerdict"></div>
-  <div class="mut" id="resSplit"></div>
+  <div class="mut" id="resSplit" style="white-space:pre-line"></div>
 </div>
 
 <!-- admin -->
@@ -191,6 +191,14 @@ function render() {
     $('resVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה!' : '🙈 הנקודה לא ניצלה';
     $('resSplit').textContent = `מד ${r.meter}/100 → ${Math.round(r.meter * METER_W)} · ` +
       `👍 ${r.up} 👎 ${r.down} מתוך ${r.n} → ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)}`;
+    /* prototype diagnostics: your own vote; the admin sees who voted what */
+    let extra = '';
+    if (game.singer !== myId) extra += '\nההצבעה שלך: ' + (myVote > 0 ? '👍' : myVote < 0 ? '👎' : 'לא הצבעת');
+    if (isHost && r.voters && r.voters.length) {
+      const nameOf = id => (players.find(p => p.id === id) || { name: '?' + id.slice(-4) }).name;
+      extra += '\nהצביעו: ' + r.voters.map(x => nameOf(x.id) + ' ' + (x.v > 0 ? '👍' : '👎')).join(', ');
+    }
+    $('resSplit').textContent += extra;
   }
 
   if (isHost && adminOpen) renderAdmin();
@@ -436,7 +444,8 @@ function loop(now) {
 function finish() {
   if (stage !== 'sing') return;
   const meter = meterScore(), t = tally();
-  const result = { meter, up: t.up, down: t.down, n: t.n, aud: t.aud, total: combine(meter) };
+  const result = { meter, up: t.up, down: t.down, n: t.n, aud: t.aud, total: combine(meter),
+    voters: [...votes].map(([id, v]) => ({ id, v })) };
   stage = 'done';
   live.total = result.total;
   pushLive();
