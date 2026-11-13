@@ -93,7 +93,7 @@
   <div class="qr" id="qrAdmin"></div>
   <div style="text-align:right;margin-top:8px">
     <div class="mut">משך שיר</div>
-    <select id="durSel"><option value="20">20 שנ׳</option><option value="45" selected>45 שנ׳</option><option value="90">90 שנ׳</option></select>
+    <select id="durSel"><option value="0" selected>עד שעוצרים</option><option value="45">45 שנ׳</option><option value="90">90 שנ׳</option><option value="180">3 דק׳</option></select>
     <div class="mut">שחקנים – בחר מי שר</div>
     <div id="plist"></div>
   </div>
@@ -110,7 +110,7 @@
 'use strict';
 const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
 const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
-const METER_W = 0.79, AUD_MAX = 50, PASS = 80, CAL_S = 3, COUNT_S = 3, DB_FLOOR = -70;
+const METER_W = 0.79, AUD_MAX = 50, PASS = 80, MIN_VOTERS = 3, MAX_SONG_S = 360, CAL_S = 3, COUNT_S = 3, DB_FLOOR = -70;
 const $ = id => document.getElementById(id);
 const ls = {
   get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
@@ -304,13 +304,16 @@ function meterScore() {
   jit.sort((x, y) => x - y);
   const med = jit.length ? jit[Math.floor(jit.length / 2)] : 45;
   const sta = clamp01((45 - med) / 37) * 100;
-  return Math.round(0.3 * vol + 0.35 * con + 0.35 * sta);
+  /* quality of what was sung × how much of the song was sung (80% of the seconds = full) */
+  const quality = 0.5 * vol + 0.5 * sta;
+  return Math.round(quality * Math.min(1, con / 80));
 }
 
 function tally() {
   let up = 0, down = 0;
   for (const v of votes.values()) v > 0 ? up++ : down++;
-  const n = Math.max(players.filter(p => p.id !== myId).length, votes.size);
+  const others = Math.max(players.filter(p => p.id !== myId).length, votes.size);
+  const n = others ? Math.max(MIN_VOTERS, others) : 0;   /* small groups: one vote is at most 50/3 */
   return { up, down, n, aud: n ? AUD_MAX * (up - down) / n : 0 };
 }
 
@@ -431,14 +434,15 @@ function loop(now) {
 
   const f = db > thrDb ? yin(buf, ctx.sampleRate) : -1;
   frames.push({ t: el, db, loud: db > thrDb, voiced: f > 0, m: f > 0 ? 69 + 12 * Math.log2(f / 440) : 0 });
-  $('singStatus').textContent = '🎤 ' + Math.max(0, Math.ceil(game.dur - el)) + ' שנ׳';
+  const sec = game.dur ? Math.max(0, Math.ceil(game.dur - el)) : Math.floor(el);
+  $('singStatus').textContent = '🎤 ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
   if (now - lastLive > 1000) {
     lastLive = now;
     live.total = combine(meterScore());
     pushLive();
     renderSinger();
   }
-  if (el >= game.dur) finish();
+  if (el >= (game.dur || MAX_SONG_S)) finish();
 }
 
 function finish() {
