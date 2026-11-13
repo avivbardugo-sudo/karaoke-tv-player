@@ -22,6 +22,11 @@
   #barWrap { position:relative; height:58vh; max-height:460px; width:120px; margin:10px auto; background:#2a2445; border-radius:20px; overflow:hidden; }
   #barFill { position:absolute; bottom:0; left:0; right:0; height:0; background:linear-gradient(0deg,var(--acc),var(--warn)); transition:height .4s, background .4s; }
   #barFill.pass { background:linear-gradient(0deg,#1f9d5a,var(--ok)); }
+  #barAud { position:absolute; left:0; right:0; bottom:0; height:0; transition:height .4s, bottom .4s; }
+  #barAud.pos { background:repeating-linear-gradient(45deg,#3ddc84,#3ddc84 10px,#2bb36a 10px,#2bb36a 20px); }
+  #barAud.neg { background:repeating-linear-gradient(45deg,#e0245e,#e0245e 10px,#a8173f 10px,#a8173f 20px); opacity:.85; }
+  #toast { direction:ltr; unicode-bidi:isolate; position:fixed; top:40%; left:0; right:0; font-size:44px; font-weight:800; pointer-events:none; opacity:0; transition:opacity .3s, transform .9s; }
+  #toast.on { opacity:1; transform:translateY(-40px); }
   #barLine { position:absolute; left:-6px; right:-6px; bottom:80%; height:3px; background:#fff; }
   #barNum { font-size:56px; font-weight:800; }
   #singStatus { font-size:20px; min-height:28px; }
@@ -67,7 +72,9 @@
 <div class="hidden" id="vSing">
   <div id="singStatus"></div>
   <div id="barNum">0</div>
-  <div id="barWrap"><div id="barFill"></div><div id="barLine"></div></div>
+  <div id="barWrap"><div id="barFill"></div><div id="barAud"></div><div id="barLine"></div></div>
+  <div class="mut"><span style="color:#ffb020">■</span> שירה &nbsp; <span style="color:#3ddc84">■</span> קהל 👍 &nbsp; <span style="color:#e0245e">■</span> קהל 👎</div>
+  <div id="toast"></div>
   <button id="readyBtn">🎤 מוכן! התחל לשיר</button>
 </div>
 
@@ -142,7 +149,7 @@ let sb = null, chan = null, players = [];
 let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 45, result: null };
 let live = { song: -1, stage: '', total: 0 };
 let myVote = 0, voteSong = -1, adminOpen = false;
-let pendingResult = null, resultTimer = 0, screenLock = null;
+let pendingResult = null, resultTimer = 0, screenLock = null, lastMeter = 0, toastTimer = 0;
 
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
@@ -331,7 +338,17 @@ function pushLive() {
 function renderSinger() {
   const total = live.song === mySong ? live.total : 0;
   $('barNum').textContent = total;
-  $('barFill').style.height = total + '%';
+  /* two parts: singing (meter) and the audience on top (green) or eating into it (red) */
+  const m = Math.min(100, lastMeter * METER_W), a = tally().aud;
+  const aud = $('barAud');
+  if (a >= 0) {
+    $('barFill').style.height = m + '%';
+    aud.className = 'pos'; aud.style.bottom = m + '%'; aud.style.height = Math.min(a, 100 - m) + '%';
+  } else {
+    const keep = Math.max(0, m + a);
+    $('barFill').style.height = keep + '%';
+    aud.className = 'neg'; aud.style.bottom = keep + '%'; aud.style.height = (m - keep) + '%';
+  }
   $('barFill').classList.toggle('pass', total >= PASS);
   show('readyBtn', stage === 'ready' && nudged);
   if (stage === 'ready') $('singStatus').textContent = nudged ? '⏰ תורך לשיר – לחץ כדי להתחיל' : '🎤 תורך לשיר!';
@@ -439,7 +456,8 @@ function loop(now) {
   $('singStatus').textContent = '🎤 ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
   if (now - lastLive > 1000) {
     lastLive = now;
-    live.total = combine(meterScore());
+    lastMeter = meterScore();
+    live.total = combine(lastMeter);
     pushLive();
     renderSinger();
   }
@@ -479,7 +497,7 @@ function stopMic() {
 /* ---------- event handlers ---------- */
 function onGameChanged() {
   if (game.phase === 'song' && game.singer === myId && mySong !== game.song) {
-    mySong = game.song; stage = 'ready'; nudged = false; votes.clear();
+    mySong = game.song; stage = 'ready'; nudged = false; votes.clear(); lastMeter = 0;
     live = { song: mySong, stage, total: 0 };
     setTimeout(() => startMic(true), 0);
   }
@@ -500,10 +518,23 @@ function onResult(p) {
   hostSet({ ...game, phase: 'result', result: p.result });
 }
 
+function toast(text, color) {
+  const t = $('toast');
+  t.textContent = text; t.style.color = color;
+  t.classList.remove('on'); void t.offsetWidth; t.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('on'), 1200);
+}
+
 function onVote(p) {
   if (game.singer !== myId || p.song !== mySong || stage !== 'sing' || !p.id || p.id === myId) return;
   if (p.v) votes.set(p.id, p.v > 0 ? 1 : -1); else votes.delete(p.id);
-  live.total = combine(meterScore());
+  const w = tally().n ? Math.round(AUD_MAX / tally().n) : 0;
+  if (p.v > 0) toast('👍 +' + w, '#3ddc84');
+  else if (p.v < 0) toast('👎 −' + w, '#ff3d8b');
+  else toast('↩ ביטול', '#9a93b8');
+  lastMeter = meterScore();
+  live.total = combine(lastMeter);
   pushLive();
   renderSinger();
 }
