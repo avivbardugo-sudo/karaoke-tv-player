@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KAROQUE</title>
+<style>
+  :root { --bg:#0e0b1a; --card:#1b1630; --fg:#f4f1ff; --mut:#9a93b8; --acc:#ff3d8b; --ok:#3ddc84; --warn:#ffb020; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,system-ui,sans-serif; padding:16px; padding-bottom:90px; text-align:center; }
+  h1 { font-size:22px; margin:4px 0 12px; }
+  .card { background:var(--card); border-radius:16px; padding:16px; margin-bottom:12px; }
+  .hidden { display:none !important; }
+  button { font:inherit; font-size:18px; border:0; border-radius:12px; padding:14px; width:100%; color:#fff; background:var(--acc); }
+  button.sec { background:#3a3358; }
+  button:disabled { opacity:.35; }
+  input, select { font:inherit; font-size:18px; padding:12px; border-radius:10px; border:0; background:#2a2445; color:var(--fg); width:100%; margin-bottom:10px; text-align:center; }
+  .mut { color:var(--mut); font-size:14px; }
+  .big { font-size:24px; margin:8px 0 14px; }
+  .qr { background:#fff; display:inline-block; padding:8px; border-radius:10px; margin:10px 0; line-height:0; }
+  /* singer bar */
+  #barWrap { position:relative; height:58vh; max-height:460px; width:120px; margin:10px auto; background:#2a2445; border-radius:20px; overflow:hidden; }
+  #barFill { position:absolute; bottom:0; left:0; right:0; height:0; background:linear-gradient(0deg,var(--acc),var(--warn)); transition:height .4s, background .4s; }
+  #barFill.pass { background:linear-gradient(0deg,#1f9d5a,var(--ok)); }
+  #barLine { position:absolute; left:-6px; right:-6px; bottom:80%; height:3px; background:#fff; }
+  #barNum { font-size:56px; font-weight:800; }
+  #singStatus { font-size:20px; min-height:28px; }
+  /* voter */
+  .vbtns { display:flex; gap:14px; margin-top:10px; }
+  .vbtns button { flex:1; font-size:72px; padding:28px 0; border-radius:24px; border:4px solid transparent; background:#2a2445; }
+  #up.on { background:#16452c; border-color:var(--ok); }
+  #down.on { background:#4a1630; border-color:var(--acc); }
+  @keyframes flash { 0%,100% { background:var(--bg); } 50% { background:#5a1a3a; } }
+  body.flash { animation:flash .5s 4; }
+  #inapp { background:#4a1630; border-radius:12px; padding:12px; margin-bottom:12px; font-size:16px; }
+  #resScore { font-size:72px; font-weight:800; }
+  /* admin */
+  #adminBtn { position:fixed; bottom:16px; left:16px; right:16px; width:auto; background:#3a3358; }
+  .prow { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #2a2445; }
+  .prow button { width:auto; padding:8px 14px; font-size:16px; }
+  .row2 { display:flex; gap:8px; margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>🎤 KAROQUE</h1>
+<div id="inapp" class="hidden">⚠️ נפתח בתוך אפליקציה (וואטסאפ/אינסטגרם…). כדי שהמיקרופון יעבוד, פתחו את הקישור בדפדפן: Safari או Chrome.</div>
+
+<!-- join -->
+<div class="card hidden" id="vJoin">
+  <div class="big" id="joinTitle">הצטרפות למשחק</div>
+  <input id="nameIn" maxlength="16" placeholder="השם שלך" autocomplete="nickname">
+  <button id="joinBtn">הצטרף</button>
+  <p class="mut">המשחק משתמש במיקרופון רק בזמן שאתם שרים, כדי לתת ציון לשירה.</p>
+</div>
+
+<!-- lobby -->
+<div class="card hidden" id="vLobby">
+  <div class="big">⏳ מחכים לשיר הבא…</div>
+  <div id="lobbyHost" class="hidden">
+    <div class="mut">חברים סורקים כדי להצטרף · חדר <b class="roomCode"></b></div>
+    <div class="qr" id="qrLobby"></div>
+  </div>
+  <div class="mut" id="lobbyPlayers"></div>
+</div>
+
+<!-- singer -->
+<div class="hidden" id="vSing">
+  <div id="singStatus"></div>
+  <div id="barNum">0</div>
+  <div id="barWrap"><div id="barFill"></div><div id="barLine"></div></div>
+  <button id="readyBtn">🎤 מוכן! התחל לשיר</button>
+</div>
+
+<!-- voter -->
+<div class="card hidden" id="vVote">
+  <div class="big" id="voteTitle"></div>
+  <div class="vbtns"><button id="up" disabled>👍</button><button id="down" disabled>👎</button></div>
+  <p class="mut">לחיצה נוספת מבטלת. אפשר לשנות עד סוף השיר.</p>
+</div>
+
+<!-- result -->
+<div class="card hidden" id="vResult">
+  <div class="big" id="resName"></div>
+  <div id="resScore"></div>
+  <div class="big" id="resVerdict"></div>
+  <div class="mut" id="resSplit"></div>
+</div>
+
+<!-- admin -->
+<div class="card hidden" id="admin">
+  <div class="big">⚙️ ניהול המשחק</div>
+  <div class="mut">חדר <b class="roomCode"></b> · <a id="joinLink" style="color:#9a93b8">קישור הצטרפות</a></div>
+  <div class="qr" id="qrAdmin"></div>
+  <div style="text-align:right;margin-top:8px">
+    <div class="mut">משך שיר</div>
+    <select id="durSel"><option value="20">20 שנ׳</option><option value="45" selected>45 שנ׳</option><option value="90">90 שנ׳</option></select>
+    <div class="mut">שחקנים – בחר מי שר</div>
+    <div id="plist"></div>
+  </div>
+  <div class="row2">
+    <button class="sec" id="stopBtn">⏹ עצור שיר</button>
+    <button class="sec" id="lobbyBtn">🏠 ללובי</button>
+  </div>
+</div>
+<button id="adminBtn" class="hidden">⚙️ ניהול</button>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+'use strict';
+const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
+const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
+const METER_W = 0.79, AUD_MAX = 50, PASS = 80, CAL_S = 3, COUNT_S = 3, DB_FLOOR = -70;
+const $ = id => document.getElementById(id);
+const ls = {
+  get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+};
+
+function newCode() {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let r = '';
+  for (let i = 0; i < 5; i++) r += A[Math.floor(Math.random() * A.length)];
+  return r;
+}
+
+/* ---------- identity: no ?r = the host's own room ---------- */
+let room = (new URLSearchParams(location.search).get('r') || '').toUpperCase();
+if (!room) {
+  room = ls.get('kq_host') || newCode();
+  ls.set('kq_host', room);
+  history.replaceState(null, '', '?r=' + room);
+}
+const isHost = ls.get('kq_host') === room;
+let myId = ls.get('kq_id');
+if (!myId) { myId = 'p' + Math.random().toString(36).slice(2, 10); ls.set('kq_id', myId); }
+let myName = ls.get('kq_name');
+const joinUrl = location.href.split('?')[0] + '?r=' + room;
+
+/* ---------- shared state ---------- */
+let sb = null, chan = null, players = [];
+let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 45, result: null };
+let live = { song: -1, stage: '', total: 0 };
+let myVote = 0, voteSong = -1, adminOpen = false;
+
+function send(event, payload) {
+  if (chan) chan.send({ type: 'broadcast', event, payload });
+}
+
+function hostSet(g) {
+  if (!isHost) return;
+  game = g;
+  send('game', game);
+  onGameChanged();
+}
+
+/* ---------- rendering ---------- */
+function show(id, on) { $(id).classList.toggle('hidden', !on); }
+
+function render() {
+  const named = !!myName;
+  const iSing = game.phase === 'song' && game.singer === myId;
+  show('vJoin', !named);
+  show('vLobby', named && game.phase === 'lobby');
+  show('vSing', named && iSing);
+  show('vVote', named && game.phase === 'song' && !iSing);
+  show('vResult', named && game.phase === 'result');
+  show('adminBtn', named && isHost);
+  show('admin', named && isHost && adminOpen);
+  show('lobbyHost', isHost);
+  $('joinTitle').textContent = isHost ? 'משחק חדש – מה השם שלך?' : 'הצטרפות למשחק';
+  $('adminBtn').textContent = adminOpen ? '✖ סגור ניהול' : '⚙️ ניהול';
+
+  $('lobbyPlayers').textContent = players.length ? 'מחוברים: ' + players.map(p => p.name).join(', ') : '';
+
+  if (iSing) renderSinger();
+
+  if (game.phase === 'song' && !iSing) {
+    if (voteSong !== game.song) { voteSong = game.song; myVote = 0; }
+    const open = live.song === game.song && live.stage === 'sing';
+    $('voteTitle').textContent = open ? `🎤 ${game.singerName} שר/ה – הצביעו!` : `🎤 ${game.singerName} מתכונן/ת…`;
+    $('up').disabled = !open; $('down').disabled = !open;
+    $('up').classList.toggle('on', myVote > 0);
+    $('down').classList.toggle('on', myVote < 0);
+  }
+
+  if (game.phase === 'result' && game.result) {
+    const r = game.result;
+    $('resName').textContent = '🎤 ' + game.singerName;
+    $('resScore').textContent = r.total;
+    $('resVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה!' : '🙈 הנקודה לא ניצלה';
+    $('resSplit').textContent = `מד ${r.meter}/100 → ${Math.round(r.meter * METER_W)} · ` +
+      `👍 ${r.up} 👎 ${r.down} מתוך ${r.n} → ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)}`;
+  }
+
+  if (isHost && adminOpen) renderAdmin();
+}
+
+function renderAdmin() {
+  const busy = game.phase === 'song';
+  $('plist').innerHTML = '';
+  for (const p of players) {
+    const row = document.createElement('div');
+    row.className = 'prow';
+    const nm = document.createElement('span');
+    nm.textContent = p.name + (p.id === myId ? ' (אתה)' : '') + (busy && game.singer === p.id ? ' 🎤' : '');
+    const b = document.createElement('button');
+    b.textContent = '🎤 שיר';
+    b.disabled = busy;
+    b.onclick = () => startSong(p);
+    row.append(nm, b);
+    $('plist').append(row);
+  }
+  $('stopBtn').disabled = !busy;
+}
+
+function drawQr(el) {
+  try {
+    const q = qrcode(0, 'M'); q.addData(joinUrl); q.make();
+    el.innerHTML = q.createSvgTag({ cellSize: 5, margin: 2 });
+  } catch (e) { el.textContent = joinUrl; }
+}
+
+/* ---------- host actions ---------- */
+function startSong(p) {
+  hostSet({ phase: 'song', song: game.song + 1, singer: p.id, singerName: p.name, dur: +$('durSel').value, result: null });
+  adminOpen = false;
+  render();
+}
+
+function stopSong() {
+  if (game.phase !== 'song') return;
+  const song = game.song;
+  send('stop', { song });
+  onStop({ song });
+  /* singer gone or not singing yet: back to the lobby */
+  setTimeout(() => { if (game.phase === 'song' && game.song === song) hostSet({ ...game, phase: 'lobby' }); }, 3000);
+}
+
+/* ---------- singer: mic analysis ---------- */
+let ctx = null, stream = null, srcNode = null, an = null, buf = null, raf = 0, wake = null, nudged = false;
+let stage = '', mySong = -1, t0 = 0, lastTick = 0, lastLive = 0;
+let calDb = [], baseDb = -55, thrDb = -50, frames = [];
+const votes = new Map();
+const D = new Float32Array(1024);
+
+function rmsDb(b) {
+  let s = 0;
+  for (let i = 0; i < b.length; i++) s += b[i] * b[i];
+  const r = Math.sqrt(s / b.length);
+  return r > 0 ? Math.max(DB_FLOOR, 20 * Math.log10(r)) : DB_FLOOR;
+}
+
+/* YIN pitch detection, 80-1000 Hz. Returns Hz or -1. */
+function yin(b, sr) {
+  const minLag = Math.floor(sr / 1000), maxLag = Math.min(Math.floor(sr / 80), 1000);
+  const W = b.length - maxLag;
+  if (W < 256) return -1;
+  for (let tau = 1; tau <= maxLag; tau++) {
+    let s = 0;
+    for (let i = 0; i < W; i++) { const d = b[i] - b[i + tau]; s += d * d; }
+    D[tau] = s;
+  }
+  let run = 0;
+  for (let tau = 1; tau <= maxLag; tau++) { run += D[tau]; D[tau] = run > 0 ? D[tau] * tau / run : 1; }
+  let tau = -1;
+  for (let t = minLag; t < maxLag; t++) {
+    if (D[t] < 0.25) { while (t + 1 < maxLag && D[t + 1] < D[t]) t++; tau = t; break; }
+  }
+  if (tau < 0) {
+    let best = 1;
+    for (let t = minLag; t < maxLag; t++) if (D[t] < best) { best = D[t]; tau = t; }
+    if (best > 0.4) tau = -1;
+  }
+  if (tau < 2) return -1;
+  const a = D[tau - 1], c = D[tau], e = D[tau + 1], den = 2 * (2 * c - a - e);
+  return sr / (den !== 0 ? tau + (e - a) / den : tau);
+}
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function meterScore() {
+  if (!frames.length) return 0;
+  const v = frames.filter(f => f.voiced);
+  const above = v.length ? v.reduce((s, f) => s + (f.db - baseDb), 0) / v.length : 0;
+  const vol = clamp01((above - 3) / 12) * 100;
+  const secs = Math.max(1, Math.ceil(frames[frames.length - 1].t));
+  const per = Array.from({ length: secs }, () => [0, 0]);
+  for (const f of frames) { const i = Math.min(secs - 1, Math.floor(f.t)); per[i][1]++; if (f.loud || f.voiced) per[i][0]++; }
+  const con = per.filter(p => p[1] && p[0] / p[1] >= 0.3).length / secs * 100;
+  const jit = [];
+  for (let i = 1; i < frames.length; i++) {
+    const a = frames[i - 1], b = frames[i];
+    if (a.voiced && b.voiced) { const d = Math.abs(b.m - a.m) * 100; if (d < 100) jit.push(d); }
+  }
+  jit.sort((x, y) => x - y);
+  const med = jit.length ? jit[Math.floor(jit.length / 2)] : 45;
+  const sta = clamp01((45 - med) / 37) * 100;
+  return Math.round(0.3 * vol + 0.35 * con + 0.35 * sta);
+}
+
+function tally() {
+  let up = 0, down = 0;
+  for (const v of votes.values()) v > 0 ? up++ : down++;
+  const n = Math.max(players.filter(p => p.id !== myId).length, votes.size);
+  return { up, down, n, aud: n ? AUD_MAX * (up - down) / n : 0 };
+}
+
+function combine(meter) {
+  return Math.round(Math.max(0, Math.min(100, meter * METER_W + tally().aud)));
+}
+
+function pushLive() {
+  const t = tally();
+  live = { song: mySong, stage, total: live.total, up: t.up, down: t.down };
+  send('live', live);
+}
+
+function renderSinger() {
+  const total = live.song === mySong ? live.total : 0;
+  $('barNum').textContent = total;
+  $('barFill').style.height = total + '%';
+  $('barFill').classList.toggle('pass', total >= PASS);
+  show('readyBtn', stage === 'ready' && nudged);
+  if (stage === 'ready') $('singStatus').textContent = nudged ? '⏰ תורך לשיר – לחץ כדי להתחיל' : '🎤 תורך לשיר!';
+  else if (stage === 'starting') $('singStatus').textContent = '🎤 מפעיל מיקרופון…';
+  else if (stage === 'done') $('singStatus').textContent = 'מחשבים…';
+}
+
+/* The audio engine is unlocked by any tap (join, vote, answer) and kept open.
+   It does not record; the mic itself opens only for the song. */
+function ensureCtx() {
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) ctx = new AC();
+  }
+  if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+  return ctx;
+}
+
+function nudge() {
+  nudged = true;
+  document.body.classList.remove('flash');
+  void document.body.offsetWidth;
+  document.body.classList.add('flash');
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  if (ctx && ctx.state === 'running') {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.15;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.25);
+  }
+}
+
+function micHelp(e) {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  return 'אין גישה למיקרופון (' + (e && e.name ? e.name : e) + ').\n' + (ios
+    ? 'באייפון: הגדרות ← אפליקציות ← Safari ← מיקרופון ← לאפשר'
+    : 'בכרום: לחצו על סמל המנעול ליד הכתובת ← הרשאות ← מיקרופון ← לאפשר');
+}
+
+async function startMic(auto) {
+  if (stage !== 'ready') return;
+  stage = 'starting';
+  render();
+  let s = null;
+  try {
+    ensureCtx();
+    if (!ctx) throw new Error('no-audio');
+    if (ctx.state !== 'running') await Promise.race([ctx.resume(), new Promise(r => setTimeout(r, 600))]);
+    if (ctx.state !== 'running') throw new Error('audio-locked');
+    s = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+  } catch (e) {
+    if (stage === 'starting') stage = 'ready';
+    if (auto) nudge(); else alert(micHelp(e));
+    nudged = true;
+    render();
+    return;
+  }
+  if (stage !== 'starting') { s.getTracks().forEach(t => t.stop()); return; }   /* song was stopped meanwhile */
+  stream = s;
+  srcNode = ctx.createMediaStreamSource(stream);
+  an = ctx.createAnalyser();
+  an.fftSize = 2048;
+  srcNode.connect(an);
+  buf = new Float32Array(an.fftSize);
+  try { wake = await navigator.wakeLock.request('screen'); } catch (e) { wake = null; }
+  calDb = []; frames = []; votes.clear();
+  stage = 'cal'; t0 = performance.now(); lastTick = 0;
+  live = { song: mySong, stage, total: 0 };
+  pushLive();
+  render();
+  raf = requestAnimationFrame(loop);
+}
+
+function loop(now) {
+  raf = requestAnimationFrame(loop);
+  if (now - lastTick < 30) return;          /* ~30 analyses per second */
+  lastTick = now;
+  an.getFloatTimeDomainData(buf);
+  const db = rmsDb(buf);
+  const el = (now - t0) / 1000;
+
+  if (stage === 'cal') {
+    calDb.push(db);
+    $('singStatus').textContent = '🤫 רגע של שקט… ' + Math.ceil(CAL_S - el);
+    if (el >= CAL_S) {
+      const s = calDb.slice().sort((a, b) => a - b);
+      baseDb = s[Math.floor(s.length * 0.7)];
+      thrDb = baseDb + 5;
+      stage = 'count'; t0 = now;
+    }
+    return;
+  }
+  if (stage === 'count') {
+    $('singStatus').textContent = '🎶 מתחילים בעוד ' + Math.ceil(COUNT_S - el);
+    if (el >= COUNT_S) { stage = 'sing'; t0 = now; lastLive = 0; pushLive(); }
+    return;
+  }
+  if (stage !== 'sing') return;
+
+  const f = db > thrDb ? yin(buf, ctx.sampleRate) : -1;
+  frames.push({ t: el, db, loud: db > thrDb, voiced: f > 0, m: f > 0 ? 69 + 12 * Math.log2(f / 440) : 0 });
+  $('singStatus').textContent = '🎤 ' + Math.max(0, Math.ceil(game.dur - el)) + ' שנ׳';
+  if (now - lastLive > 1000) {
+    lastLive = now;
+    live.total = combine(meterScore());
+    pushLive();
+    renderSinger();
+  }
+  if (el >= game.dur) finish();
+}
+
+function finish() {
+  if (stage !== 'sing') return;
+  const meter = meterScore(), t = tally();
+  const result = { meter, up: t.up, down: t.down, n: t.n, aud: t.aud, total: combine(meter) };
+  stage = 'done';
+  live.total = result.total;
+  pushLive();
+  stopMic();
+  send('result', { song: mySong, result });
+  if (isHost) onResult({ song: mySong, result });
+  render();
+}
+
+function stopMic() {
+  cancelAnimationFrame(raf);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (srcNode) srcNode.disconnect();
+  if (wake) wake.release().catch(() => {});
+  stream = null; srcNode = null; an = null; wake = null;
+}
+
+/* ---------- event handlers ---------- */
+function onGameChanged() {
+  if (game.phase === 'song' && game.singer === myId && mySong !== game.song) {
+    mySong = game.song; stage = 'ready'; nudged = false; votes.clear();
+    live = { song: mySong, stage, total: 0 };
+    setTimeout(() => startMic(true), 0);
+  }
+  if ((game.phase !== 'song' || game.singer !== myId) && stage && stage !== 'done') {
+    stopMic(); stage = '';
+  }
+  render();
+}
+
+function onStop(p) {
+  if (p.song !== mySong || game.singer !== myId) return;
+  if (stage === 'sing' && frames.length > 30) finish();
+  else { stopMic(); stage = ''; }
+}
+
+function onResult(p) {
+  if (!isHost || p.song !== game.song || game.phase !== 'song') return;
+  hostSet({ ...game, phase: 'result', result: p.result });
+}
+
+function onVote(p) {
+  if (game.singer !== myId || p.song !== mySong || stage !== 'sing' || !p.id || p.id === myId) return;
+  if (p.v) votes.set(p.id, p.v > 0 ? 1 : -1); else votes.delete(p.id);
+  live.total = combine(meterScore());
+  pushLive();
+  renderSinger();
+}
+
+function vote(v) {
+  if (game.phase !== 'song' || live.stage !== 'sing') return;
+  myVote = myVote === v ? 0 : v;
+  if (navigator.vibrate) navigator.vibrate(30);
+  send('vote', { id: myId, song: game.song, v: myVote });
+  render();
+}
+
+/* ---------- realtime ---------- */
+function connect() {
+  const c = sb.channel('karoque-game-' + room, { config: { presence: { key: myId } } });
+  chan = c;
+  c.on('presence', { event: 'sync' }, () => {
+      players = Object.entries(c.presenceState()).map(([id, arr]) => ({ id, name: (arr[0] && arr[0].name) || '?' }));
+      render();
+    })
+    .on('broadcast', { event: 'game' }, ({ payload }) => { if (!isHost) { game = payload; onGameChanged(); } })
+    .on('broadcast', { event: 'live' }, ({ payload }) => { if (game.singer !== myId) { live = payload; render(); } })
+    .on('broadcast', { event: 'vote' }, ({ payload }) => onVote(payload))
+    .on('broadcast', { event: 'result' }, ({ payload }) => onResult(payload))
+    .on('broadcast', { event: 'stop' }, ({ payload }) => onStop(payload))
+    .on('broadcast', { event: 'hello' }, () => {
+      if (isHost) send('game', game);
+      if (game.singer === myId && stage) pushLive();
+    })
+    .subscribe(async status => {
+      if (status === 'SUBSCRIBED') {
+        await c.track({ name: myName, host: isHost });
+        send('hello', { id: myId });
+      } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && chan === c) {
+        chan = null;
+        sb.removeChannel(c);
+        setTimeout(connect, 3000);
+      }
+    });
+}
+
+function join() {
+  const n = $('nameIn').value.trim();
+  if (!n) { $('nameIn').focus(); return; }
+  myName = n; ls.set('kq_name', n);
+  ensureCtx();
+  render();
+  if (!sb) { sb = window.supabase.createClient(SB_URL, SB_KEY); connect(); }
+  else if (chan) chan.track({ name: myName, host: isHost });
+}
+
+/* ---------- wiring ---------- */
+$('joinBtn').onclick = join;
+$('nameIn').onkeydown = e => { if (e.key === 'Enter') join(); };
+$('readyBtn').onclick = () => startMic(false);
+['click', 'touchend'].forEach(ev => document.addEventListener(ev, () => { if (myName) ensureCtx(); }, { passive: true }));
+if (/FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat|TikTok|musical_ly|; wv\)/.test(navigator.userAgent)) show('inapp', true);
+$('up').onclick = () => vote(1);
+$('down').onclick = () => vote(-1);
+$('adminBtn').onclick = () => { adminOpen = !adminOpen; render(); };
+$('stopBtn').onclick = stopSong;
+$('lobbyBtn').onclick = () => { stopSong(); hostSet({ ...game, phase: 'lobby', result: null }); };
+document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
+$('joinLink').href = joinUrl;
+if (isHost) { drawQr($('qrLobby')); drawQr($('qrAdmin')); }
+
+if (!window.supabase) {
+  document.body.insertAdjacentHTML('beforeend', '<p class="mut">ספריית Supabase לא נטענה</p>');
+} else if (myName) {
+  $('nameIn').value = myName;
+  sb = window.supabase.createClient(SB_URL, SB_KEY);
+  connect();
+}
+render();
+</script>
+</body>
+</html>
