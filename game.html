@@ -142,6 +142,7 @@ let sb = null, chan = null, players = [];
 let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 45, result: null };
 let live = { song: -1, stage: '', total: 0 };
 let myVote = 0, voteSong = -1, adminOpen = false;
+let pendingResult = null, resultTimer = 0, screenLock = null;
 
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
@@ -454,8 +455,16 @@ function finish() {
   live.total = result.total;
   pushLive();
   stopMic();
-  send('result', { song: mySong, result });
-  if (isHost) onResult({ song: mySong, result });
+  if (isHost) {
+    onResult({ song: mySong, result });
+  } else {
+    /* show it here at once, and resend until the host confirms (its phone may have slept) */
+    pendingResult = { song: mySong, result };
+    game = { ...game, phase: 'result', result };
+    send('result', pendingResult);
+    clearInterval(resultTimer);
+    resultTimer = setInterval(() => { if (pendingResult) send('result', pendingResult); else clearInterval(resultTimer); }, 2000);
+  }
   render();
 }
 
@@ -515,7 +524,7 @@ function connect() {
       players = Object.entries(c.presenceState()).map(([id, arr]) => ({ id, name: (arr[0] && arr[0].name) || '?' }));
       render();
     })
-    .on('broadcast', { event: 'game' }, ({ payload }) => { if (!isHost) { game = payload; onGameChanged(); } })
+    .on('broadcast', { event: 'game' }, ({ payload }) => onGameMsg(payload))
     .on('broadcast', { event: 'live' }, ({ payload }) => { if (game.singer !== myId) { live = payload; render(); } })
     .on('broadcast', { event: 'vote' }, ({ payload }) => onVote(payload))
     .on('broadcast', { event: 'result' }, ({ payload }) => onResult(payload))
@@ -523,6 +532,7 @@ function connect() {
     .on('broadcast', { event: 'hello' }, () => {
       if (isHost) send('game', game);
       if (game.singer === myId && stage) pushLive();
+      if (pendingResult) send('result', pendingResult);
     })
     .subscribe(async status => {
       if (status === 'SUBSCRIBED') {
@@ -536,11 +546,38 @@ function connect() {
     });
 }
 
+function onGameMsg(g) {
+  if (isHost) return;
+  if (pendingResult) {
+    if (g.song === pendingResult.song && g.phase === 'song') { send('result', pendingResult); return; }
+    pendingResult = null;
+    clearInterval(resultTimer);
+  }
+  game = g;
+  onGameChanged();
+}
+
+/* keep the screen on while the game page is open: a sleeping phone drops the connection */
+function keepAwake() {
+  if (screenLock || document.visibilityState !== 'visible' || !('wakeLock' in navigator)) return;
+  navigator.wakeLock.request('screen').then(l => {
+    screenLock = l;
+    l.addEventListener('release', () => { screenLock = null; });
+  }).catch(() => {});
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !myName) return;
+  keepAwake();
+  send('hello', { id: myId });          /* resync after the phone woke up */
+});
+
 function join() {
   const n = $('nameIn').value.trim();
   if (!n) { $('nameIn').focus(); return; }
   myName = n; ls.set('kq_name', n);
   ensureCtx();
+  keepAwake();
   render();
   if (!sb) { sb = window.supabase.createClient(SB_URL, SB_KEY); connect(); }
   else if (chan) chan.track({ name: myName, host: isHost });
@@ -550,7 +587,7 @@ function join() {
 $('joinBtn').onclick = join;
 $('nameIn').onkeydown = e => { if (e.key === 'Enter') join(); };
 $('readyBtn').onclick = () => startMic(false);
-['click', 'touchend'].forEach(ev => document.addEventListener(ev, () => { if (myName) ensureCtx(); }, { passive: true }));
+['click', 'touchend'].forEach(ev => document.addEventListener(ev, () => { if (myName) { ensureCtx(); keepAwake(); } }, { passive: true }));
 if (/FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat|TikTok|musical_ly|; wv\)/.test(navigator.userAgent)) show('inapp', true);
 $('up').onclick = () => vote(1);
 $('down').onclick = () => vote(-1);
