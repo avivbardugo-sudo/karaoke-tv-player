@@ -89,7 +89,7 @@
 <!-- admin -->
 <div class="card hidden" id="admin">
   <div class="big">⚙️ ניהול המשחק</div>
-  <div class="mut">חדר <b class="roomCode"></b> · <a id="joinLink" style="color:#9a93b8">קישור הצטרפות</a></div>
+  <div class="mut">חדר <b class="roomCode"></b> · מצטרפים רק בסריקת QR במצלמה</div>
   <div class="qr" id="qrAdmin"></div>
   <div style="text-align:right;margin-top:8px">
     <div class="mut">משך שיר</div>
@@ -545,7 +545,6 @@ $('adminBtn').onclick = () => { adminOpen = !adminOpen; render(); };
 $('stopBtn').onclick = stopSong;
 $('lobbyBtn').onclick = () => { stopSong(); hostSet({ ...game, phase: 'lobby', result: null }); };
 document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
-$('joinLink').href = joinUrl;
 if (isHost) { drawQr($('qrLobby')); drawQr($('qrAdmin')); }
 
 if (!window.supabase) {
