@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KAROQUE TV</title>
+<style>
+  :root { --bg:#0e0b1a; --card:#1b1630; --fg:#f4f1ff; --mut:#9a93b8; --acc:#ff3d8b; --ok:#3ddc84; --warn:#ffb020; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; }
+  body { background:radial-gradient(ellipse at top,#2a1650,var(--bg) 70%); color:var(--fg); font-family:-apple-system,system-ui,"Segoe UI",sans-serif; }
+  .hidden { display:none !important; }
+  .screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4vh 5vw; text-align:center; }
+  .logo { font-size:4.5vw; font-weight:900; letter-spacing:.3vw; }
+  .logo span { color:var(--acc); }
+  .mut { color:var(--mut); }
+  /* lobby */
+  #lobby { flex-direction:row; gap:6vw; }
+  #lobby .left { flex:1; }
+  .qr { background:#fff; padding:1.2vw; border-radius:1.5vw; line-height:0; display:inline-block; }
+  .qr svg { width:26vw; height:26vw; }
+  .room { font-size:2vw; margin-top:1.5vh; }
+  .room b { letter-spacing:.4vw; color:var(--warn); }
+  .chips { display:flex; flex-wrap:wrap; gap:1vw; justify-content:center; margin-top:3vh; }
+  .chip { background:var(--card); border-radius:3vw; padding:1vh 2vw; font-size:2.2vw; }
+  .rules { font-size:1.7vw; line-height:1.6; margin-top:3vh; color:#d8d2f0; }
+  /* song */
+  #singer { font-size:4vw; font-weight:800; margin-bottom:3vh; }
+  #bar { position:relative; width:80vw; height:9vh; background:#2a2445; border-radius:5vh; overflow:hidden; }
+  #bMeter, #bAud { position:absolute; top:0; bottom:0; transition:width .4s, right .4s; }
+  #bMeter { right:0; width:0; background:linear-gradient(270deg,var(--acc),var(--warn)); }
+  #bAud.pos { background:repeating-linear-gradient(45deg,#3ddc84,#3ddc84 14px,#2bb36a 14px,#2bb36a 28px); }
+  #bAud.neg { background:repeating-linear-gradient(45deg,#e0245e,#e0245e 14px,#a8173f 14px,#a8173f 28px); opacity:.85; }
+  #b80 { position:absolute; top:-1vh; bottom:-1vh; right:80%; width:.4vw; background:#fff; }
+  #num { font-size:9vw; font-weight:900; margin-top:2vh; }
+  #votes { font-size:3vw; margin-top:1vh; }
+  #songStatus { font-size:2.4vw; margin-top:2vh; color:var(--mut); }
+  .corner { position:absolute; bottom:3vh; left:3vw; text-align:center; font-size:1.2vw; color:var(--mut); }
+  .corner .qr { padding:.5vw; border-radius:.8vw; }
+  .corner .qr svg { width:9vw; height:9vw; }
+  /* result */
+  #rScore { font-size:16vw; font-weight:900; line-height:1; }
+  #rVerdict { font-size:4vw; margin-top:2vh; }
+  #rSplit { font-size:2vw; margin-top:2vh; }
+  #conn { position:absolute; top:2vh; left:2vw; font-size:1.4vw; color:var(--mut); }
+</style>
+</head>
+<body>
+<div id="conn">מתחבר…</div>
+
+<div class="screen" id="lobby">
+  <div class="left">
+    <div class="logo">🎤 KARO<span>QUE</span></div>
+    <div class="rules">עונים נכון – נקודה. טועים – שרים!<br>שיר עם ציון 80 ומעלה מציל את הנקודה.<br>הקהל מצביע 👍 / 👎 בטלפון.</div>
+    <div class="chips" id="chips"></div>
+    <div class="mut" id="adminLine" style="font-size:1.8vw;margin-top:2vh"></div>
+  </div>
+  <div>
+    <div class="qr" id="qrBig"></div>
+    <div class="room">סרקו במצלמה כדי להצטרף · חדר <b class="roomCode"></b></div>
+  </div>
+</div>
+
+<div class="screen hidden" id="song">
+  <div id="singer"></div>
+  <div id="bar"><div id="bMeter"></div><div id="bAud"></div><div id="b80"></div></div>
+  <div id="num">0</div>
+  <div id="votes"></div>
+  <div id="songStatus"></div>
+</div>
+
+<div class="screen hidden" id="result">
+  <div style="font-size:3.5vw" id="rName"></div>
+  <div id="rScore"></div>
+  <div id="rVerdict"></div>
+  <div class="mut" id="rSplit"></div>
+</div>
+
+<div class="corner hidden" id="corner"><div class="qr" id="qrSmall"></div><div>להצטרפות · <b class="roomCode"></b></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+'use strict';
+/* The TV is the game's authority: it owns the state, picks the admin,
+   runs the admin's commands and confirms the singer's result. */
+const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
+const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
+const PASS = 80, ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 3000, RESULT_SHOW_MS = 15000;
+const $ = id => document.getElementById(id);
+const ls = {
+  get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* no storage */ } }
+};
+
+function newCode() {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let r = '';
+  for (let i = 0; i < 5; i++) r += A[Math.floor(Math.random() * A.length)];
+  return r;
+}
+
+const room = ls.get('kq_tv_room') || newCode();
+ls.set('kq_tv_room', room);
+const joinUrl = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '') + 'game.html?r=' + room;
+
+let sb = null, chan = null, players = [], adminGoneAt = 0, resultTimer = 0;
+let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 0, result: null, admin: ls.get('kq_tv_admin') };
+let live = {};
+
+function send(event, payload) {
+  if (chan) chan.send({ type: 'broadcast', event, payload });
+}
+
+function set(g) {
+  game = g;
+  ls.set('kq_tv_admin', game.admin || '');
+  send('game', game);
+  render();
+}
+
+/* ---------- rendering ---------- */
+function show(id, on) { $(id).classList.toggle('hidden', !on); }
+
+function drawQr(el) {
+  try {
+    const q = qrcode(0, 'M'); q.addData(joinUrl); q.make();
+    el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2 });
+  } catch (e) { el.textContent = joinUrl; }
+}
+
+function nameOf(id) { return (players.find(p => p.id === id) || {}).name || ''; }
+
+function render() {
+  show('lobby', game.phase === 'lobby');
+  show('song', game.phase === 'song');
+  show('result', game.phase === 'result');
+  show('corner', game.phase !== 'lobby');
+
+  $('chips').innerHTML = '';
+  for (const p of players) {
+    const c = document.createElement('div');
+    c.className = 'chip';
+    c.textContent = (p.id === game.admin ? '👑 ' : '') + p.name;
+    $('chips').append(c);
+  }
+  $('adminLine').textContent = players.length
+    ? (game.admin && nameOf(game.admin) ? '👑 ' + nameOf(game.admin) + ' מנהל/ת את המשחק מהטלפון' : '')
+    : 'מחכים לשחקנים…';
+
+  if (game.phase === 'song') {
+    $('singer').textContent = '🎤 ' + game.singerName + ' שר/ה';
+    const on = live.song === game.song;
+    const m = on ? (live.meter || 0) : 0, a = on ? (live.aud || 0) : 0, total = on ? (live.total || 0) : 0;
+    const aud = $('bAud');
+    if (a >= 0) {
+      $('bMeter').style.width = m + '%';
+      aud.className = 'pos'; aud.style.right = m + '%'; aud.style.width = Math.min(a, 100 - m) + '%';
+    } else {
+      const keep = Math.max(0, m + a);
+      $('bMeter').style.width = keep + '%';
+      aud.className = 'neg'; aud.style.right = keep + '%'; aud.style.width = (m - keep) + '%';
+    }
+    $('num').textContent = total;
+    $('num').style.color = total >= PASS ? 'var(--ok)' : '';
+    $('votes').textContent = on ? `👍 ${live.up || 0}   👎 ${live.down || 0}` : '';
+    const st = on ? live.stage : '';
+    $('songStatus').textContent = st === 'sing' ? 'הצביעו בטלפון!' :
+      st === 'cal' || st === 'count' ? 'מתכוננים…' : st === 'done' ? 'מחשבים…' : 'מחכים למיקרופון של ' + game.singerName + '…';
+  }
+
+  if (game.phase === 'result' && game.result) {
+    const r = game.result;
+    $('rName').textContent = '🎤 ' + game.singerName;
+    $('rScore').textContent = r.total;
+    $('rScore').style.color = r.total >= PASS ? 'var(--ok)' : 'var(--acc)';
+    $('rVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה!' : '🙈 הנקודה לא ניצלה';
+    $('rSplit').textContent = `שירה ${Math.round(r.meter * 0.79)} · קהל ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)} (👍 ${r.up} 👎 ${r.down})`;
+  }
+}
+
+/* ---------- authority ---------- */
+function checkAdmin() {
+  const present = players.some(p => p.id === game.admin);
+  if (present) { adminGoneAt = 0; return; }
+  if (!players.length) return;
+  const first = players.slice().sort((x, y) => x.at - y.at)[0];
+  if (!game.admin) { set({ ...game, admin: first.id }); return; }
+  if (!adminGoneAt) adminGoneAt = Date.now();
+  else if (Date.now() - adminGoneAt > ADMIN_GRACE_MS) { adminGoneAt = 0; set({ ...game, admin: first.id }); }
+}
+
+function toLobby() {
+  clearTimeout(resultTimer);
+  set({ ...game, phase: 'lobby', result: null });
+}
+
+function onCmd(p) {
+  if (!p || p.by !== game.admin) return;
+  if (p.action === 'start') {
+    const t = players.find(x => x.id === p.target);
+    if (!t || game.phase === 'song') return;
+    clearTimeout(resultTimer);
+    live = {};
+    set({ ...game, phase: 'song', song: game.song + 1, singer: t.id, singerName: t.name, dur: +p.dur || 0, result: null });
+  } else if (p.action === 'stop' || p.action === 'lobby') {
+    if (game.phase === 'song') {
+      const song = game.song;
+      send('stop', { song });
+      /* singer gone or not singing yet: back to the lobby */
+      setTimeout(() => { if (game.phase === 'song' && game.song === song) toLobby(); }, STOP_GRACE_MS);
+      if (p.action === 'stop') return;
+    }
+    toLobby();
+  }
+}
+
+function onResult(p) {
+  if (!p || p.song !== game.song || game.phase !== 'song') return;
+  set({ ...game, phase: 'result', result: p.result });
+  clearTimeout(resultTimer);
+  resultTimer = setTimeout(() => { if (game.phase === 'result') toLobby(); }, RESULT_SHOW_MS);
+}
+
+/* ---------- realtime ---------- */
+function connect() {
+  const c = sb.channel('karoque-game-' + room, { config: { presence: { key: 'tv' } } });
+  chan = c;
+  c.on('presence', { event: 'sync' }, () => {
+      players = Object.entries(c.presenceState()).filter(([id]) => id !== 'tv')
+        .map(([id, arr]) => ({ id, name: (arr[0] && arr[0].name) || '?', at: (arr[0] && arr[0].at) || 0 }));
+      checkAdmin();
+      render();
+    })
+    .on('broadcast', { event: 'cmd' }, ({ payload }) => onCmd(payload))
+    .on('broadcast', { event: 'result' }, ({ payload }) => onResult(payload))
+    .on('broadcast', { event: 'live' }, ({ payload }) => { if (payload.song === game.song) { live = payload; render(); } })
+    .on('broadcast', { event: 'hello' }, () => send('game', game))
+    .subscribe(async status => {
+      if (status === 'SUBSCRIBED') {
+        await c.track({ tv: true });
+        $('conn').textContent = '';
+        send('game', game);
+      } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && chan === c) {
+        $('conn').textContent = 'מתחבר מחדש…';
+        chan = null;
+        sb.removeChannel(c);
+        setTimeout(connect, 3000);
+      }
+    });
+}
+
+document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
+drawQr($('qrBig'));
+drawQr($('qrSmall'));
+setInterval(() => { send('game', game); checkAdmin(); }, 5000);   /* heartbeat + admin hand-over */
+if (window.supabase) {
+  sb = window.supabase.createClient(SB_URL, SB_KEY);
+  connect();
+} else {
+  $('conn').textContent = 'ספריית Supabase לא נטענה';
+}
+render();
+</script>
+</body>
+</html>

@@ -50,6 +50,11 @@
 <h1>🎤 KAROQUE</h1>
 <div id="inapp" class="hidden">⚠️ נפתח בתוך אפליקציה (וואטסאפ/אינסטגרם…). כדי שהמיקרופון יעבוד, פתחו את הקישור בדפדפן: Safari או Chrome.</div>
 
+<div class="card hidden" id="vScan">
+  <div class="big">📺 סרקו במצלמה את הקוד שעל מסך הטלוויזיה</div>
+  <p class="mut">פתחו את המשחק בטלוויזיה, ואז סרקו את ה-QR שמופיע בה.</p>
+</div>
+
 <!-- join -->
 <div class="card hidden" id="vJoin">
   <div class="big" id="joinTitle">הצטרפות למשחק</div>
@@ -61,10 +66,7 @@
 <!-- lobby -->
 <div class="card hidden" id="vLobby">
   <div class="big">⏳ מחכים לשיר הבא…</div>
-  <div id="lobbyHost" class="hidden">
-    <div class="mut">חברים סורקים כדי להצטרף · חדר <b class="roomCode"></b></div>
-    <div class="qr" id="qrLobby"></div>
-  </div>
+  <div class="mut" id="tvState"></div>
   <div class="mut" id="lobbyPlayers"></div>
 </div>
 
@@ -96,8 +98,7 @@
 <!-- admin -->
 <div class="card hidden" id="admin">
   <div class="big">⚙️ ניהול המשחק</div>
-  <div class="mut">חדר <b class="roomCode"></b> · מצטרפים רק בסריקת QR במצלמה</div>
-  <div class="qr" id="qrAdmin"></div>
+  <div class="mut">חדר <b class="roomCode"></b> · ה-QR להצטרפות מוצג בטלוויזיה</div>
   <div style="text-align:right;margin-top:8px">
     <div class="mut">משך שיר</div>
     <select id="durSel"><option value="0" selected>עד שעוצרים</option><option value="45">45 שנ׳</option><option value="90">90 שנ׳</option><option value="180">3 דק׳</option></select>
@@ -112,7 +113,6 @@
 <button id="adminBtn" class="hidden">⚙️ ניהול</button>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
 'use strict';
 const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
@@ -131,22 +131,18 @@ function newCode() {
   return r;
 }
 
-/* ---------- identity: no ?r = the host's own room ---------- */
-let room = (new URLSearchParams(location.search).get('r') || '').toUpperCase();
-if (!room) {
-  room = ls.get('kq_host') || newCode();
-  ls.set('kq_host', room);
-  history.replaceState(null, '', '?r=' + room);
-}
-const isHost = ls.get('kq_host') === room;
+/* ---------- identity: the room comes from the QR on the TV ---------- */
+const room = (new URLSearchParams(location.search).get('r') || '').toUpperCase();
 let myId = ls.get('kq_id');
 if (!myId) { myId = 'p' + Math.random().toString(36).slice(2, 10); ls.set('kq_id', myId); }
 let myName = ls.get('kq_name');
-const joinUrl = location.href.split('?')[0] + '?r=' + room;
+if (room && !ls.get('kq_at_' + room)) ls.set('kq_at_' + room, String(Date.now()));
+const joinedAt = +ls.get('kq_at_' + room) || Date.now();
 
 /* ---------- shared state ---------- */
 let sb = null, chan = null, players = [];
-let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 45, result: null };
+let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 0, result: null, admin: '' };
+let tvOnline = false;
 let live = { song: -1, stage: '', total: 0 };
 let myVote = 0, voteSong = -1, adminOpen = false;
 let pendingResult = null, resultTimer = 0, screenLock = null, lastMeter = 0, toastTimer = 0;
@@ -155,11 +151,11 @@ function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
 }
 
-function hostSet(g) {
-  if (!isHost) return;
-  game = g;
-  send('game', game);
-  onGameChanged();
+/* the TV holds the game; the admin's phone only sends commands */
+function isAdmin() { return !!myId && game.admin === myId; }
+
+function cmd(action, extra) {
+  send('cmd', { by: myId, action, ...(extra || {}) });
 }
 
 /* ---------- rendering ---------- */
@@ -168,15 +164,16 @@ function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function render() {
   const named = !!myName;
   const iSing = game.phase === 'song' && game.singer === myId;
-  show('vJoin', !named);
+  show('vScan', !room);
+  show('vJoin', !!room && !named);
   show('vLobby', named && game.phase === 'lobby');
   show('vSing', named && iSing);
   show('vVote', named && game.phase === 'song' && !iSing);
   show('vResult', named && game.phase === 'result');
-  show('adminBtn', named && isHost);
-  show('admin', named && isHost && adminOpen);
-  show('lobbyHost', isHost);
-  $('joinTitle').textContent = isHost ? 'משחק חדש – מה השם שלך?' : 'הצטרפות למשחק';
+  if (!isAdmin()) adminOpen = false;
+  show('adminBtn', named && isAdmin());
+  show('admin', named && isAdmin() && adminOpen);
+  $('tvState').textContent = tvOnline ? '' : '📺 הטלוויזיה לא מחוברת';
   $('adminBtn').textContent = adminOpen ? '✖ סגור ניהול' : '⚙️ ניהול';
 
   $('lobbyPlayers').textContent = players.length ? 'מחוברים: ' + players.map(p => p.name).join(', ') : '';
@@ -202,14 +199,14 @@ function render() {
     /* prototype diagnostics: your own vote; the admin sees who voted what */
     let extra = '';
     if (game.singer !== myId) extra += '\nההצבעה שלך: ' + (myVote > 0 ? '👍' : myVote < 0 ? '👎' : 'לא הצבעת');
-    if (isHost && r.voters && r.voters.length) {
+    if (isAdmin() && r.voters && r.voters.length) {
       const nameOf = id => (players.find(p => p.id === id) || { name: '?' + id.slice(-4) }).name;
       extra += '\nהצביעו: ' + r.voters.map(x => nameOf(x.id) + ' ' + (x.v > 0 ? '👍' : '👎')).join(', ');
     }
     $('resSplit').textContent += extra;
   }
 
-  if (isHost && adminOpen) renderAdmin();
+  if (isAdmin() && adminOpen) renderAdmin();
 }
 
 function renderAdmin() {
@@ -219,7 +216,7 @@ function renderAdmin() {
     const row = document.createElement('div');
     row.className = 'prow';
     const nm = document.createElement('span');
-    nm.textContent = p.name + (p.id === myId ? ' (אתה)' : '') + (busy && game.singer === p.id ? ' 🎤' : '');
+    nm.textContent = (p.id === game.admin ? '👑 ' : '') + p.name + (p.id === myId ? ' (אתה)' : '') + (busy && game.singer === p.id ? ' 🎤' : '');
     const b = document.createElement('button');
     b.textContent = '🎤 שיר';
     b.disabled = busy;
@@ -230,28 +227,14 @@ function renderAdmin() {
   $('stopBtn').disabled = !busy;
 }
 
-function drawQr(el) {
-  try {
-    const q = qrcode(0, 'M'); q.addData(joinUrl); q.make();
-    el.innerHTML = q.createSvgTag({ cellSize: 5, margin: 2 });
-  } catch (e) { el.textContent = joinUrl; }
-}
-
-/* ---------- host actions ---------- */
+/* ---------- admin actions (sent to the TV) ---------- */
 function startSong(p) {
-  hostSet({ phase: 'song', song: game.song + 1, singer: p.id, singerName: p.name, dur: +$('durSel').value, result: null });
+  cmd('start', { target: p.id, dur: +$('durSel').value });
   adminOpen = false;
   render();
 }
 
-function stopSong() {
-  if (game.phase !== 'song') return;
-  const song = game.song;
-  send('stop', { song });
-  onStop({ song });
-  /* singer gone or not singing yet: back to the lobby */
-  setTimeout(() => { if (game.phase === 'song' && game.song === song) hostSet({ ...game, phase: 'lobby' }); }, 3000);
-}
+function stopSong() { cmd('stop'); }
 
 /* ---------- singer: mic analysis ---------- */
 let ctx = null, stream = null, srcNode = null, an = null, buf = null, raf = 0, wake = null, nudged = false;
@@ -331,7 +314,8 @@ function combine(meter) {
 
 function pushLive() {
   const t = tally();
-  live = { song: mySong, stage, total: live.total, up: t.up, down: t.down };
+  live = { song: mySong, stage, total: live.total, up: t.up, down: t.down,
+    meter: Math.round(Math.min(100, lastMeter * METER_W)), aud: Math.round(t.aud) };
   send('live', live);
 }
 
@@ -473,16 +457,12 @@ function finish() {
   live.total = result.total;
   pushLive();
   stopMic();
-  if (isHost) {
-    onResult({ song: mySong, result });
-  } else {
-    /* show it here at once, and resend until the host confirms (its phone may have slept) */
-    pendingResult = { song: mySong, result };
-    game = { ...game, phase: 'result', result };
-    send('result', pendingResult);
-    clearInterval(resultTimer);
-    resultTimer = setInterval(() => { if (pendingResult) send('result', pendingResult); else clearInterval(resultTimer); }, 2000);
-  }
+  /* show it here at once, and resend until the TV confirms */
+  pendingResult = { song: mySong, result };
+  game = { ...game, phase: 'result', result };
+  send('result', pendingResult);
+  clearInterval(resultTimer);
+  resultTimer = setInterval(() => { if (pendingResult) send('result', pendingResult); else clearInterval(resultTimer); }, 2000);
   render();
 }
 
@@ -511,11 +491,6 @@ function onStop(p) {
   if (p.song !== mySong || game.singer !== myId) return;
   if (stage === 'sing' && frames.length > 30) finish();
   else { stopMic(); stage = ''; }
-}
-
-function onResult(p) {
-  if (!isHost || p.song !== game.song || game.phase !== 'song') return;
-  hostSet({ ...game, phase: 'result', result: p.result });
 }
 
 function toast(text, color) {
@@ -552,22 +527,23 @@ function connect() {
   const c = sb.channel('karoque-game-' + room, { config: { presence: { key: myId } } });
   chan = c;
   c.on('presence', { event: 'sync' }, () => {
-      players = Object.entries(c.presenceState()).map(([id, arr]) => ({ id, name: (arr[0] && arr[0].name) || '?' }));
+      const st = c.presenceState();
+      tvOnline = !!st.tv;
+      players = Object.entries(st).filter(([id]) => id !== 'tv')
+        .map(([id, arr]) => ({ id, name: (arr[0] && arr[0].name) || '?' }));
       render();
     })
     .on('broadcast', { event: 'game' }, ({ payload }) => onGameMsg(payload))
     .on('broadcast', { event: 'live' }, ({ payload }) => { if (game.singer !== myId) { live = payload; render(); } })
     .on('broadcast', { event: 'vote' }, ({ payload }) => onVote(payload))
-    .on('broadcast', { event: 'result' }, ({ payload }) => onResult(payload))
     .on('broadcast', { event: 'stop' }, ({ payload }) => onStop(payload))
     .on('broadcast', { event: 'hello' }, () => {
-      if (isHost) send('game', game);
       if (game.singer === myId && stage) pushLive();
       if (pendingResult) send('result', pendingResult);
     })
     .subscribe(async status => {
       if (status === 'SUBSCRIBED') {
-        await c.track({ name: myName, host: isHost });
+        await c.track({ name: myName, at: joinedAt });
         send('hello', { id: myId });
       } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && chan === c) {
         chan = null;
@@ -578,7 +554,6 @@ function connect() {
 }
 
 function onGameMsg(g) {
-  if (isHost) return;
   if (pendingResult) {
     if (g.song === pendingResult.song && g.phase === 'song') { send('result', pendingResult); return; }
     pendingResult = null;
@@ -611,7 +586,7 @@ function join() {
   keepAwake();
   render();
   if (!sb) { sb = window.supabase.createClient(SB_URL, SB_KEY); connect(); }
-  else if (chan) chan.track({ name: myName, host: isHost });
+  else if (chan) chan.track({ name: myName, at: joinedAt });
 }
 
 /* ---------- wiring ---------- */
@@ -624,13 +599,12 @@ $('up').onclick = () => vote(1);
 $('down').onclick = () => vote(-1);
 $('adminBtn').onclick = () => { adminOpen = !adminOpen; render(); };
 $('stopBtn').onclick = stopSong;
-$('lobbyBtn').onclick = () => { stopSong(); hostSet({ ...game, phase: 'lobby', result: null }); };
+$('lobbyBtn').onclick = () => cmd('lobby');
 document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
-if (isHost) { drawQr($('qrLobby')); drawQr($('qrAdmin')); }
 
 if (!window.supabase) {
   document.body.insertAdjacentHTML('beforeend', '<p class="mut">ספריית Supabase לא נטענה</p>');
-} else if (myName) {
+} else if (myName && room) {
   $('nameIn').value = myName;
   sb = window.supabase.createClient(SB_URL, SB_KEY);
   connect();
