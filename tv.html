@@ -50,10 +50,18 @@
   #num { font-size:9vw; font-weight:900; margin-top:2vh; }
   #votes { font-size:3vw; margin-top:1vh; }
   #songStatus { font-size:2.4vw; margin-top:2vh; color:var(--mut); }
-  /* bottom strip over a playing video */
-  #strip { position:absolute; left:3vw; right:3vw; bottom:3vh; background:rgba(14,11,26,.82); border-radius:2vw; padding:1.5vh 2vw; display:flex; align-items:center; gap:2vw; font-size:2vw; }
-  #strip .bar { flex:1; width:auto; height:4.5vh; }
-  #sNum { font-size:3.2vw; font-weight:900; min-width:7vw; text-align:center; }
+  /* narrow side panel over a playing video (the lyrics stay free) */
+  #strip { position:absolute; left:1.2vw; top:10vh; bottom:10vh; width:7vw; background:rgba(14,11,26,.75); border-radius:1.5vw;
+           padding:1.5vh .5vw; display:flex; flex-direction:column; align-items:center; gap:1.2vh; font-size:1.3vw; text-align:center; }
+  .vbar { position:relative; flex:1; width:3vw; background:#2a2445; border-radius:1.5vw; overflow:hidden; }
+  .vM, .vA { position:absolute; left:0; right:0; transition:height .4s, bottom .4s; }
+  .vM { bottom:0; height:0; background:linear-gradient(0deg,var(--acc),var(--warn)); }
+  .vA.pos { background:repeating-linear-gradient(45deg,#3ddc84,#3ddc84 8px,#2bb36a 8px,#2bb36a 16px); }
+  .vA.neg { background:repeating-linear-gradient(45deg,#e0245e,#e0245e 8px,#a8173f 8px,#a8173f 16px); opacity:.85; }
+  .v80 { position:absolute; left:-.5vw; right:-.5vw; bottom:80%; height:.5vh; background:#fff; }
+  #sNum { font-size:2.8vw; font-weight:900; }
+  #sName, #sVotes { white-space:pre-line; }
+  body.clear #mini { display:none; }
   /* result + scores */
   #rScore { font-size:16vw; font-weight:900; line-height:1; }
   #rVerdict { font-size:4vw; margin-top:2vh; }
@@ -124,7 +132,7 @@
 
 <div id="strip" class="hidden">
   <div id="sName"></div>
-  <div class="bar"><div class="bM"></div><div class="bA"></div><div class="b80"></div></div>
+  <div class="vbar"><div class="vM"></div><div class="vA"></div><div class="v80"></div></div>
   <div id="sNum"></div>
   <div id="sVotes"></div>
 </div>
@@ -471,6 +479,18 @@ function drawBar(scope, m, a) {
   }
 }
 
+function drawVBar(scope, m, a) {
+  const fill = scope.querySelector('.vM'), aud = scope.querySelector('.vA');
+  if (a >= 0) {
+    fill.style.height = m + '%';
+    aud.className = 'vA pos'; aud.style.bottom = m + '%'; aud.style.height = Math.min(a, 100 - m) + '%';
+  } else {
+    const keep = Math.max(0, m + a);
+    fill.style.height = keep + '%';
+    aud.className = 'vA neg'; aud.style.bottom = keep + '%'; aud.style.height = (m - keep) + '%';
+  }
+}
+
 function scoreRows() {
   return game.order.map(id => ({ id, name: game.names[id] || nameOf(id), s: game.scores[id] || 0 }))
     .sort((x, y) => y.s - x.s);
@@ -527,12 +547,13 @@ function render() {
     const m = on ? (live.meter || 0) : 0, a = on ? (live.aud || 0) : 0, total = on ? (live.total || 0) : 0;
     $('singer').textContent = '🎤 ' + game.singerName + ' שר/ה' + (game.songTitle ? ' · ' + game.songTitle : '');
     drawBar($('song'), m, a);
-    drawBar($('strip'), m, a);
+    drawVBar($('strip'), m, a);
     $('num').textContent = total; $('sNum').textContent = total;
     $('num').style.color = $('sNum').style.color = total >= PASS ? 'var(--ok)' : '';
-    $('sName').textContent = '🎤 ' + game.singerName;
+    $('sName').textContent = '🎤\n' + game.singerName;
     const v = on ? `👍 ${live.up || 0}  👎 ${live.down || 0}` : '';
-    $('votes').textContent = v; $('sVotes').textContent = v;
+    $('votes').textContent = v;
+    $('sVotes').textContent = on ? `👍 ${live.up || 0}\n👎 ${live.down || 0}` : '';
     const st = on ? live.stage : '';
     $('songStatus').textContent = st === 'sing' ? (game.songTitle ? 'הצביעו בטלפון!' : 'שירו שיר לבחירתכם · הצביעו בטלפון!') :
       st === 'cal' || st === 'count' ? 'מתכוננים…' : st === 'done' ? 'מחשבים…' : 'מחכים למיקרופון של ' + game.singerName + '…';
