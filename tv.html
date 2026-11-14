@@ -65,10 +65,14 @@
   .corner .qr { padding:.5vw; border-radius:.8vw; }
   .corner .qr svg { width:9vw; height:9vw; }
   #mini { position:absolute; top:2vh; right:3vw; font-size:1.6vw; color:var(--mut); }
+  #kqv { position:fixed; top:0; left:0; width:100%; height:100%; z-index:1; background:#000; display:none; }
+  #kqv.on { display:block; }
+  .screen, #strip, #mini, .corner, #conn { z-index:5; }
   #conn { position:absolute; top:2vh; left:2vw; font-size:1.4vw; color:var(--mut); }
 </style>
 </head>
 <body>
+<video id="kqv" playsinline></video>
 <div id="conn">מתחבר…</div>
 
 <div class="screen" id="lobby">
@@ -155,7 +159,7 @@ function newCode() {
 
 const room = ls.get('kq_tv_room') || newCode();
 ls.set('kq_tv_room', room);
-const base = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '');
+const base = new URL('.', document.baseURI).href;
 const joinUrl = base + 'game.html?r=' + room;
 
 let sb = null, chan = null, players = [], adminGoneAt = 0, timer = 0, tick = 0;
@@ -165,7 +169,11 @@ let game = {
   q: null, reveal: null, songTitle: '', penalty: false
 };
 let live = {}, correctIdx = -1, bank = [], qNo = 0;
-let usb = [], usedSongs = new Set(), videoOn = false, hasBridge = window.parent !== window;
+let usb = [], usedSongs = new Set(), videoOn = false;
+/* inside the Samsung app this page runs in the app itself (TVs do not draw iframes):
+   it reads the USB drive and plays the songs on its own <video>. */
+const inApp = !!(window.tizen && window.tizen.filesystem);
+const hasBridge = !inApp && window.parent !== window;
 let lastClear = false;
 
 function send(event, payload) {
@@ -191,14 +199,49 @@ window.addEventListener('message', e => {
   else if (m.kq === 'ended') { videoOn = false; onVideoEnded(); }
 });
 
+const USB_DIR = 'Karoke 40/Karoke songs', VIDEO_RE = /\.(mp4|m4v|mov|mkv|webm|avi)$/i;
+
+function usbScan() {
+  try {
+    tizen.filesystem.listStorages(list => {
+      const st = list.filter(x => x.type === 'EXTERNAL' && x.state === 'MOUNTED')[0];
+      if (!st) { usb = []; render(); return; }
+      tizen.filesystem.resolve(st.label, root => {
+        let dir;
+        try { dir = root.resolve(USB_DIR); } catch (e) { usb = []; render(); return; }
+        dir.listFiles(files => {
+          usb = files.filter(f => f.isFile && VIDEO_RE.test(f.name)).map(f => ({
+            id: f.toURI(), uri: f.toURI(),
+            title: f.name.replace(/\.[^.]+$/, '').replace(/\s*\[[^\]]*\]\s*$/, '').trim() || f.name
+          }));
+          render();
+        }, () => {});
+      }, () => {}, 'r');
+    }, () => {});
+  } catch (e) { /* no USB API */ }
+}
+
 function playSong(s) {
   if (!s) return;
   videoOn = true;
-  toApp({ kq: 'play', id: s.id });
+  if (inApp) {
+    const v = $('kqv');
+    v.src = s.uri; v.className = 'on';
+    const r = v.play();
+    if (r && r.catch) r.catch(() => { videoOn = false; v.className = ''; onVideoEnded(); });
+  } else {
+    toApp({ kq: 'play', id: s.id });
+  }
 }
 
 function stopVideo() {
-  if (videoOn) toApp({ kq: 'stop' });
+  if (inApp) {
+    const v = $('kqv');
+    try { v.pause(); } catch (e) { /* not playing */ }
+    v.removeAttribute('src'); v.className = '';
+  } else if (videoOn) {
+    toApp({ kq: 'stop' });
+  }
   videoOn = false;
 }
 
@@ -555,6 +598,25 @@ drawQr($('qrBig'));
 drawQr($('qrSmall'));
 loadBank();
 toApp({ kq: 'hello' });
+if (inApp) {
+  usbScan();
+  setInterval(usbScan, 30000);
+  try { tizen.filesystem.addStorageStateChangeListener(() => setTimeout(usbScan, 2000)); } catch (e) { /* older API */ }
+  const v = $('kqv');
+  v.addEventListener('ended', () => { stopVideo(); onVideoEnded(); });
+  v.addEventListener('error', () => { stopVideo(); onVideoEnded(); });
+  try { tizen.tvinputdevice.registerKey('ColorF1Green'); } catch (e) { /* not a TV */ }
+  /* BACK or green: back to the regular karaoke app */
+  document.addEventListener('keydown', e => {
+    if (e.keyCode !== 10009 && e.keyCode !== 404) return;
+    e.preventDefault();
+    stopVideo();
+    ls.set('kq_mode', 'karaoke');
+    let home = '';
+    try { home = sessionStorage.getItem('kq_home') || ''; } catch (err) { home = ''; }
+    if (home) location.href = home;
+  });
+}
 setInterval(() => { send('game', game); checkAdmin(); }, 5000);   /* heartbeat + admin hand-over */
 if (window.supabase) {
   sb = window.supabase.createClient(SB_URL, SB_KEY);
