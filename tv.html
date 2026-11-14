@@ -174,7 +174,7 @@ let usb = [], usedSongs = new Set(), videoOn = false;
    it reads the USB drive and plays the songs on its own <video>. */
 const inApp = !!(window.tizen && window.tizen.filesystem);
 const hasBridge = !inApp && window.parent !== window;
-let lastClear = false;
+let lastClear = false, lastUsbCount = -1;
 
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
@@ -201,24 +201,36 @@ window.addEventListener('message', e => {
 
 const USB_DIR = 'Karoke 40/Karoke songs', VIDEO_RE = /\.(mp4|m4v|mov|mkv|webm|avi)$/i;
 
+/* TEMPORARY: status lines to the developer's diagnostics channel (Samsung app only) */
+function diag(m) {
+  if (!inApp) return;
+  try {
+    fetch(SB_URL + '/realtime/v1/api/broadcast', { method: 'POST',
+      headers: { apikey: SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ topic: 'karoque-diag', event: 'log', payload: { m: 'tv: ' + String(m).slice(0, 300) } }] }) });
+  } catch (e) { /* best effort */ }
+}
+window.addEventListener('error', e => diag('ERR ' + e.message + ' @' + e.lineno));
+
 function usbScan() {
   try {
     tizen.filesystem.listStorages(list => {
       const st = list.filter(x => x.type === 'EXTERNAL' && x.state === 'MOUNTED')[0];
-      if (!st) { usb = []; render(); return; }
+      if (!st) { diag('usb: no drive (' + list.length + ' storages)'); usb = []; render(); return; }
       tizen.filesystem.resolve(st.label, root => {
         let dir;
-        try { dir = root.resolve(USB_DIR); } catch (e) { usb = []; render(); return; }
+        try { dir = root.resolve(USB_DIR); } catch (e) { diag('usb: no folder ' + e.message); usb = []; render(); return; }
         dir.listFiles(files => {
           usb = files.filter(f => f.isFile && VIDEO_RE.test(f.name)).map(f => ({
             id: f.toURI(), uri: f.toURI(),
             title: f.name.replace(/\.[^.]+$/, '').replace(/\s*\[[^\]]*\]\s*$/, '').trim() || f.name
           }));
+          if (usb.length !== lastUsbCount) { lastUsbCount = usb.length; diag('usb songs ' + usb.length + ', questions ' + bank.length); }
           render();
-        }, () => {});
-      }, () => {}, 'r');
-    }, () => {});
-  } catch (e) { /* no USB API */ }
+        }, e => diag('usb list error ' + e.message));
+      }, e => diag('usb resolve error ' + e.message), 'r');
+    }, e => diag('usb storages error ' + e.message));
+  } catch (e) { diag('usb exception ' + e.message); }
 }
 
 function playSong(s) {
@@ -490,7 +502,7 @@ function render() {
     an ? '👑 ' + an + ' מתחיל/ה את המשחק מהטלפון (⚙️ ניהול)' : '';
   $('mini').textContent = game.on
     ? scoreRows().map(r => r.name + ' ' + r.s).join(' · ') + `   ·   תור ${Math.min(game.turnNo + 1, game.turns)}/${game.turns}`
-    : (hasBridge ? `🎵 ${usb.length} שירים ב-USB` : '');
+    : (inApp || hasBridge ? `🎵 ${usb.length} שירים ב-USB` : '');
 
   if ((ph === 'question' || ph === 'reveal') && game.q) {
     const q = game.q, rv = game.reveal;
@@ -599,6 +611,7 @@ drawQr($('qrSmall'));
 loadBank();
 toApp({ kq: 'hello' });
 if (inApp) {
+  diag('start, base ' + base);
   usbScan();
   setInterval(usbScan, 30000);
   try { tizen.filesystem.addStorageStateChangeListener(() => setTimeout(usbScan, 2000)); } catch (e) { /* older API */ }
