@@ -189,7 +189,7 @@ let usb = [], usedSongs = new Set(), videoOn = false;
    it reads the USB drive and plays the songs on its own <video>. */
 const inApp = !!(window.tizen && window.tizen.filesystem);
 const hasBridge = !inApp && window.parent !== window;
-let lastClear = false, lastUsbCount = -1;
+let lastClear = false, lastUsbCount = -1, adminUsed = false;
 
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
@@ -201,6 +201,10 @@ function set(patch) {
   send('game', game);
   render();
 }
+
+/* numbers inside Hebrew text: keep the sign on the left ("-1", "+17") */
+const ltr = x => '\u2066' + x + '\u2069';
+const signed = n => ltr((n > 0 ? '+' : '') + n);
 
 function later(fn, ms) { clearTimeout(timer); timer = setTimeout(fn, ms); }
 
@@ -318,7 +322,8 @@ function startGame(turns, cut, secs) {
   const scores = {};
   order.forEach(id => { scores[id] = 0; });
   usedSongs.clear();
-  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, turns: turns || 15, cut: cut || 0,
+  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, ptr: 0, pending: [], rejected: [],
+    turns: turns || 15, cut: cut || 0,
     secs: [10, 15, 20, 30].indexOf(secs) >= 0 ? secs : ANSWER_S };
   nextTurn();
 }
@@ -327,9 +332,10 @@ function nextTurn() {
   if (!game.on) return;
   if (game.turnNo >= game.turns) { closing(); return; }
   /* the next player in order who is still here */
-  for (let k = 0; k < game.order.length; k++) {
-    const id = game.order[(game.turnNo + k) % game.order.length];
-    if (present(id)) { ask(id); return; }
+  const len = game.order.length;
+  for (let k = 0; k < len; k++) {
+    const i = ((game.ptr || 0) + k) % len, id = game.order[i];
+    if (present(id)) { game.ptr = (i + 1) % len; ask(id); return; }
   }
   set({ on: false, phase: 'lobby' });          /* everyone left */
 }
@@ -524,9 +530,12 @@ function toLobby() {
 
 /* ---------- admin ---------- */
 function checkAdmin() {
-  if (present(game.admin)) { adminGoneAt = 0; return; }
   if (!players.length) return;
   const first = players.slice().sort((x, y) => x.at - y.at)[0];
+  /* until the admin has done anything, the admin is whoever scanned first
+     (phones connect at different speeds, so the first one online may not be the first scan) */
+  if (!adminUsed && !game.on && first.id !== game.admin) { set({ admin: first.id }); return; }
+  if (present(game.admin)) { adminGoneAt = 0; return; }
   if (!game.admin) { set({ admin: first.id }); return; }
   if (!adminGoneAt) adminGoneAt = Date.now();
   else if (Date.now() - adminGoneAt > ADMIN_GRACE_MS) { adminGoneAt = 0; set({ admin: first.id }); }
@@ -534,6 +543,7 @@ function checkAdmin() {
 
 function onCmd(p) {
   if (!p || p.by !== game.admin) return;
+  adminUsed = true;
   switch (p.action) {
   case 'game':                                  /* start the quiz */
     if (game.on || game.phase === 'song') return;
@@ -556,11 +566,31 @@ function onCmd(p) {
     if (game.phase === 'song') send('stop', { song: game.song });
     closing();
     break;
+  case 'approve': {
+    const t = players.find(x => x.id === p.target);
+    if (!game.on || !t || game.order.indexOf(t.id) >= 0) return;
+    set({ order: game.order.concat(t.id), names: { ...game.names, [t.id]: t.name }, scores: { ...game.scores, [t.id]: 0 } });
+    refreshPending();
+    break;
+  }
+  case 'reject':
+    if (!game.on || (game.rejected || []).indexOf(p.target) >= 0) return;
+    set({ rejected: (game.rejected || []).concat(p.target) });
+    refreshPending();
+    break;
   case 'lobby':
     if (game.phase === 'song') send('stop', { song: game.song });
     toLobby();
     break;
   }
+}
+
+/* players who joined after the start wait for the admin */
+function refreshPending() {
+  if (!game.on) { if ((game.pending || []).length) set({ pending: [] }); return; }
+  const pend = players.filter(p => game.order.indexOf(p.id) < 0 && (game.rejected || []).indexOf(p.id) < 0)
+    .map(p => ({ id: p.id, name: p.name }));
+  if (JSON.stringify(pend) !== JSON.stringify(game.pending || [])) set({ pending: pend });
 }
 
 function onAnswer(p) {
@@ -633,8 +663,9 @@ function render() {
   $('adminLine').textContent = !players.length ? 'מחכים לשחקנים…' :
     an ? '👑 ' + an + ' מתחיל/ה את המשחק מהטלפון (⚙️ ניהול)' : '';
   $('mini').textContent = game.on
-    ? scoreRows().map(r => r.name + ' ' + r.s).join(' · ') + `   ·   תור ${Math.min(game.turnNo + 1, game.turns)}/${game.turns}`
-    : (inApp || hasBridge ? `🎵 ${usb.length} שירים ב-USB` : '');
+    ? scoreRows().map(r => '\u2068' + r.name + ' ' + ltr(r.s) + '\u2069').join(' · ') + `   ·   תור ${Math.min(game.turnNo + 1, game.turns)}/${game.turns}`
+    + ((game.pending || []).length ? '   ·   ⏳ ממתינים לאישור: ' + game.pending.map(x => x.name).join(', ') : '')
+    : '';
 
   if ((ph === 'question' || ph === 'reveal') && game.q) {
     const q = game.q, rv = game.reveal;
@@ -650,8 +681,8 @@ function render() {
     });
     $('qTimer').textContent = rv ? '' : q.left;
     $('qTimer').classList.toggle('low', !rv && q.left <= 5);
-    $('verdict').textContent = !rv ? '' : rv.ok ? '✅ נכון! +1' :
-      (rv.chosen < 0 ? '⏰ נגמר הזמן! −1' : '❌ טעות! −1') + ' · עכשיו ' + q.byName + ' שר/ה!';
+    $('verdict').textContent = !rv ? '' : rv.ok ? '✅ נכון! ' + signed(1) :
+      (rv.chosen < 0 ? '⏰ נגמר הזמן! ' : '❌ טעות! ') + signed(-1) + ' · עכשיו ' + q.byName + ' שר/ה!';
   }
 
   if (ph === 'wheel') $('wheelCap').textContent = game.songTitle ? '🎵 ' + game.songTitle : '🎡 מגרילים שיר ל' + game.singerName + '…';
@@ -679,8 +710,8 @@ function render() {
     if (r) {
       $('rScore').textContent = r.total;
       $('rScore').style.color = r.total >= PASS ? 'var(--ok)' : 'var(--acc)';
-      $('rVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה! +1' : '🙈 הנקודה לא ניצלה';
-      $('rSplit').textContent = `שירה ${Math.round(r.meter * METER_W)} · קהל ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)} (👍 ${r.up} 👎 ${r.down})`;
+      $('rVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה! ' + signed(1) : '🙈 הנקודה לא ניצלה';
+      $('rSplit').textContent = `שירה ${Math.round(r.meter * METER_W)} · קהל ${signed(Math.round(r.aud))} (👍 ${r.up} 👎 ${r.down})`;
     } else {
       $('rScore').textContent = '—';
       $('rScore').style.color = 'var(--mut)';
@@ -696,7 +727,7 @@ function render() {
       const d = document.createElement('div');
       d.className = 'row';
       d.textContent = (i === 0 ? '👑 ' : (i + 1) + '. ') + r.name;
-      const s = document.createElement('b'); s.textContent = r.s;
+      const s = document.createElement('b'); s.textContent = ltr(r.s);
       d.append(s);
       $('board').append(d);
     });
@@ -719,6 +750,7 @@ function connect() {
       players = Object.entries(c.presenceState()).filter(([id]) => id !== 'tv')
         .map(([id, arr]) => ({ id, name: (arr[0] && arr[0].name) || '?', at: (arr[0] && arr[0].at) || 0 }));
       checkAdmin();
+      refreshPending();
       render();
     })
     .on('broadcast', { event: 'cmd' }, ({ payload }) => onCmd(payload))
@@ -760,6 +792,7 @@ if (inApp) {
     e.preventDefault();
     stopVideo();
     ls.set('kq_mode', 'karaoke');
+    try { sessionStorage.setItem('kq_back', '1'); } catch (err) { /* private mode */ }
     let home = '';
     try { home = sessionStorage.getItem('kq_home') || ''; } catch (err) { home = ''; }
     if (home) location.href = home;

@@ -45,6 +45,8 @@
   #qClock { font-size:40px; font-weight:800; }
   #qClock.low { color:var(--acc); }
   .brow { display:flex; justify-content:space-between; padding:8px 4px; border-bottom:1px solid #2a2445; font-size:18px; }
+  #pendBar { position:fixed; top:0; left:0; right:0; z-index:20; background:#3a2a05; border-bottom:2px solid var(--warn); padding:10px 12px; }
+  #pendBar .prow { border:0; padding:4px 0; }
   #resScore { font-size:72px; font-weight:800; }
   /* admin */
   #adminBtn { position:fixed; bottom:16px; left:16px; right:16px; width:auto; background:#3a3358; }
@@ -71,6 +73,10 @@
   <button id="joinBtn">הצטרף</button>
   <p class="mut">המשחק משתמש במיקרופון רק בזמן שאתם שרים, כדי לתת ציון לשירה.</p>
 </div>
+
+<!-- joined after the start: waits for the admin -->
+<div class="card hidden" id="vWait"><div class="big" id="waitText"></div></div>
+<div id="pendBar" class="hidden"></div>
 
 <!-- lobby -->
 <div class="card hidden" id="vLobby">
@@ -196,6 +202,13 @@ function diag(m) {
   } catch (e) { /* best effort */ }
 }
 
+/* numbers inside Hebrew text: keep the sign on the left ("-1", "+17") */
+const ltr = x => '\u2066' + x + '\u2069';
+const signed = n => ltr((n > 0 ? '+' : '') + n);
+
+/* in a running game only the approved players take part */
+function inGame(id) { return !game.on || (game.order || []).indexOf(id) >= 0; }
+
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
 }
@@ -211,10 +224,15 @@ function cmd(action, extra) {
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
 
 function render() {
-  const named = !!myName;
+  const named = !!myName && inGame(myId);
   const iSing = game.phase === 'song' && game.singer === myId;
   show('vScan', !room);
-  show('vJoin', !!room && !named);
+  show('vJoin', !!room && !myName);
+  const waiting = !!myName && !inGame(myId);
+  show('vWait', waiting);
+  if (waiting) $('waitText').textContent = (game.rejected || []).indexOf(myId) >= 0
+    ? '❌ המנהל לא אישר להצטרף למשחק הזה' : '⏳ המשחק כבר התחיל · מחכה לאישור המנהל…';
+  renderPending();
   show('vLobby', named && game.phase === 'lobby');
   show('vSing', named && iSing);
   show('vVote', named && game.phase === 'song' && !iSing);
@@ -257,7 +275,7 @@ function render() {
     $('resScore').textContent = r.total;
     $('resVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה!' : '🙈 הנקודה לא ניצלה';
     $('resSplit').textContent = `מד ${r.meter}/100 → ${Math.round(r.meter * METER_W)} · ` +
-      `👍 ${r.up} 👎 ${r.down} מתוך ${r.n} → ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)}`;
+      `👍 ${r.up} 👎 ${r.down} מתוך ${r.n} → ${signed(Math.round(r.aud))}`;
     /* prototype diagnostics: your own vote; the admin sees who voted what */
     let extra = '';
     if (game.singer !== myId) extra += '\nההצבעה שלך: ' + (myVote > 0 ? '👍' : myVote < 0 ? '👎' : 'לא הצבעת');
@@ -318,8 +336,8 @@ function renderQuestion() {
     });
   }
   show('qBtns', mine || !!rv);
-  $('qVerdict').textContent = !rv ? (mine ? '' : 'עונה בטלפון שלו/ה…') : rv.ok ? '✅ נכון! +1' :
-    (rv.chosen < 0 ? '⏰ נגמר הזמן! −1' : '❌ טעות! −1') + (mine ? ' · עכשיו אתה שר!' : ' · עכשיו ' + q.byName + ' שר/ה!');
+  $('qVerdict').textContent = !rv ? (mine ? '' : 'עונה בטלפון שלו/ה…') : rv.ok ? '✅ נכון! ' + signed(1) :
+    (rv.chosen < 0 ? '⏰ נגמר הזמן! ' : '❌ טעות! ') + signed(-1) + (mine ? ' · עכשיו אתה שר!' : ' · עכשיו ' + q.byName + ' שר/ה!');
   clearInterval(qTick);
   const draw = () => {
     const left = Math.max(0, Math.ceil((qLocal.ends - Date.now()) / 1000));
@@ -348,7 +366,7 @@ function renderScores() {
     const d = document.createElement('div');
     d.className = 'brow';
     d.textContent = (i === 0 ? '👑 ' : (i + 1) + '. ') + r.name + (r.id === myId ? ' (אתה)' : '');
-    const b = document.createElement('b'); b.textContent = r.s;
+    const b = document.createElement('b'); b.textContent = ltr(r.s);
     d.append(b);
     $('board').append(d);
   });
@@ -434,7 +452,7 @@ function meterScore() {
 function tally() {
   let up = 0, down = 0;
   for (const v of votes.values()) v > 0 ? up++ : down++;
-  const others = Math.max(players.filter(p => p.id !== myId).length, votes.size);
+  const others = Math.max(players.filter(p => p.id !== myId && inGame(p.id)).length, votes.size);
   const n = others ? Math.max(MIN_VOTERS, others) : 0;   /* small groups: one vote is at most 50/3 */
   return { up, down, n, aud: n ? AUD_MAX * (up - down) / n : 0 };
 }
@@ -640,8 +658,28 @@ function toast(text, color) {
   toastTimer = setTimeout(() => t.classList.remove('on'), 1200);
 }
 
+function renderPending() {
+  const list = isAdmin() ? (game.pending || []) : [];
+  show('pendBar', list.length > 0);
+  if (!list.length) return;
+  const bar = $('pendBar');
+  bar.innerHTML = '';
+  for (const x of list) {
+    const row = document.createElement('div');
+    row.className = 'prow';
+    const nm = document.createElement('span');
+    nm.textContent = '⏳ ' + x.name + ' מבקש/ת להצטרף';
+    const ok = document.createElement('button');
+    ok.textContent = '✅ אשר'; ok.onclick = () => cmd('approve', { target: x.id });
+    const no = document.createElement('button');
+    no.textContent = '❌'; no.className = 'sec'; no.onclick = () => cmd('reject', { target: x.id });
+    row.append(nm, ok, no);
+    bar.append(row);
+  }
+}
+
 function onVote(p) {
-  if (game.singer !== myId || p.song !== mySong || stage !== 'sing' || !p.id || p.id === myId) return;
+  if (game.singer !== myId || p.song !== mySong || stage !== 'sing' || !p.id || p.id === myId || !inGame(p.id)) return;
   if (p.v) votes.set(p.id, p.v > 0 ? 1 : -1); else votes.delete(p.id);
   const w = tally().n ? Math.round(AUD_MAX / tally().n) : 0;
   if (p.v > 0) toast('👍 +' + w, '#3ddc84');
