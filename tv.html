@@ -5,10 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KAROQUE TV</title>
 <style>
-  :root { --bg:#0e0b1a; --card:#1b1630; --fg:#f4f1ff; --mut:#9a93b8; --acc:#ff3d8b; --ok:#3ddc84; --warn:#ffb020; }
+  :root { --bg:#0e0b1a; --card:#1b1630; --fg:#f4f1ff; --mut:#9a93b8; --acc:#ff3d8b; --ok:#3ddc84; --warn:#ffb020; --bad:#e0245e; }
   * { box-sizing:border-box; }
   html, body { margin:0; height:100%; overflow:hidden; }
   body { background:radial-gradient(ellipse at top,#2a1650,var(--bg) 70%); color:var(--fg); font-family:-apple-system,system-ui,"Segoe UI",sans-serif; }
+  /* a USB song plays under this page (Tizen app): only the bottom strip is drawn */
+  body.clear { background:transparent; }
+  body.clear .screen, body.clear .corner { display:none !important; }
   .hidden { display:none !important; }
   .screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4vh 5vw; text-align:center; }
   .logo { font-size:4.5vw; font-weight:900; letter-spacing:.3vw; }
@@ -23,25 +26,45 @@
   .room b { letter-spacing:.4vw; color:var(--warn); }
   .chips { display:flex; flex-wrap:wrap; gap:1vw; justify-content:center; margin-top:3vh; }
   .chip { background:var(--card); border-radius:3vw; padding:1vh 2vw; font-size:2.2vw; }
+  .chip.turn { outline:.3vw solid var(--warn); }
   .rules { font-size:1.7vw; line-height:1.6; margin-top:3vh; color:#d8d2f0; }
+  /* question */
+  #qHead { font-size:2.2vw; color:var(--mut); }
+  #qText { font-size:3.6vw; font-weight:800; margin:3vh 0 4vh; max-width:85vw; line-height:1.3; }
+  #qAns { display:grid; grid-template-columns:1fr 1fr; gap:2vh 2vw; width:85vw; }
+  .ans { background:var(--card); border-radius:2vw; padding:2.5vh 2vw; font-size:2.6vw; border:.4vw solid transparent; }
+  .ans b { color:var(--warn); margin-left:1vw; }
+  .ans.good { background:#16452c; border-color:var(--ok); }
+  .ans.bad { background:#4a1630; border-color:var(--bad); }
+  #qTimer { font-size:5vw; font-weight:900; margin-top:3vh; }
+  #qTimer.low { color:var(--bad); }
+  #verdict { font-size:4vw; font-weight:900; margin-top:3vh; min-height:6vh; }
   /* song */
   #singer { font-size:4vw; font-weight:800; margin-bottom:3vh; }
-  #bar { position:relative; width:80vw; height:9vh; background:#2a2445; border-radius:5vh; overflow:hidden; }
-  #bMeter, #bAud { position:absolute; top:0; bottom:0; transition:width .4s, right .4s; }
-  #bMeter { right:0; width:0; background:linear-gradient(270deg,var(--acc),var(--warn)); }
-  #bAud.pos { background:repeating-linear-gradient(45deg,#3ddc84,#3ddc84 14px,#2bb36a 14px,#2bb36a 28px); }
-  #bAud.neg { background:repeating-linear-gradient(45deg,#e0245e,#e0245e 14px,#a8173f 14px,#a8173f 28px); opacity:.85; }
-  #b80 { position:absolute; top:-1vh; bottom:-1vh; right:80%; width:.4vw; background:#fff; }
+  .bar { position:relative; width:80vw; height:9vh; background:#2a2445; border-radius:5vh; overflow:hidden; }
+  .bM, .bA { position:absolute; top:0; bottom:0; transition:width .4s, right .4s; }
+  .bM { right:0; width:0; background:linear-gradient(270deg,var(--acc),var(--warn)); }
+  .bA.pos { background:repeating-linear-gradient(45deg,#3ddc84,#3ddc84 14px,#2bb36a 14px,#2bb36a 28px); }
+  .bA.neg { background:repeating-linear-gradient(45deg,#e0245e,#e0245e 14px,#a8173f 14px,#a8173f 28px); opacity:.85; }
+  .b80 { position:absolute; top:-1vh; bottom:-1vh; right:80%; width:.4vw; background:#fff; }
   #num { font-size:9vw; font-weight:900; margin-top:2vh; }
   #votes { font-size:3vw; margin-top:1vh; }
   #songStatus { font-size:2.4vw; margin-top:2vh; color:var(--mut); }
-  .corner { position:absolute; bottom:3vh; left:3vw; text-align:center; font-size:1.2vw; color:var(--mut); }
-  .corner .qr { padding:.5vw; border-radius:.8vw; }
-  .corner .qr svg { width:9vw; height:9vw; }
-  /* result */
+  /* bottom strip over a playing video */
+  #strip { position:absolute; left:3vw; right:3vw; bottom:3vh; background:rgba(14,11,26,.82); border-radius:2vw; padding:1.5vh 2vw; display:flex; align-items:center; gap:2vw; font-size:2vw; }
+  #strip .bar { flex:1; width:auto; height:4.5vh; }
+  #sNum { font-size:3.2vw; font-weight:900; min-width:7vw; text-align:center; }
+  /* result + scores */
   #rScore { font-size:16vw; font-weight:900; line-height:1; }
   #rVerdict { font-size:4vw; margin-top:2vh; }
   #rSplit { font-size:2vw; margin-top:2vh; }
+  #board { font-size:2.6vw; width:60vw; margin-top:3vh; }
+  #board .row { display:flex; justify-content:space-between; padding:1vh 2vw; border-bottom:1px solid #2a2445; }
+  #titles { font-size:2.6vw; margin-top:3vh; line-height:1.6; }
+  .corner { position:absolute; bottom:3vh; left:3vw; text-align:center; font-size:1.2vw; color:var(--mut); }
+  .corner .qr { padding:.5vw; border-radius:.8vw; }
+  .corner .qr svg { width:9vw; height:9vw; }
+  #mini { position:absolute; top:2vh; right:3vw; font-size:1.6vw; color:var(--mut); }
   #conn { position:absolute; top:2vh; left:2vw; font-size:1.4vw; color:var(--mut); }
 </style>
 </head>
@@ -51,7 +74,7 @@
 <div class="screen" id="lobby">
   <div class="left">
     <div class="logo">🎤 KARO<span>QUE</span></div>
-    <div class="rules">עונים נכון – נקודה. טועים – שרים!<br>שיר עם ציון 80 ומעלה מציל את הנקודה.<br>הקהל מצביע 👍 / 👎 בטלפון.</div>
+    <div class="rules">כל אחד בתורו עונה על שאלה בטלפון.<br>נכון: +1. טעות או שתיקה: −1, ושרים שיר!<br>שיר עם ציון 80 ומעלה מציל את הנקודה. הקהל מצביע 👍 / 👎.</div>
     <div class="chips" id="chips"></div>
     <div class="mut" id="adminLine" style="font-size:1.8vw;margin-top:2vh"></div>
   </div>
@@ -61,9 +84,17 @@
   </div>
 </div>
 
+<div class="screen hidden" id="question">
+  <div id="qHead"></div>
+  <div id="qText"></div>
+  <div id="qAns"></div>
+  <div id="qTimer"></div>
+  <div id="verdict"></div>
+</div>
+
 <div class="screen hidden" id="song">
   <div id="singer"></div>
-  <div id="bar"><div id="bMeter"></div><div id="bAud"></div><div id="b80"></div></div>
+  <div class="bar"><div class="bM"></div><div class="bA"></div><div class="b80"></div></div>
   <div id="num">0</div>
   <div id="votes"></div>
   <div id="songStatus"></div>
@@ -76,18 +107,40 @@
   <div class="mut" id="rSplit"></div>
 </div>
 
+<div class="screen hidden" id="closing">
+  <div class="logo">🎶 שיר סיום</div>
+  <div style="font-size:3vw;margin-top:3vh">כולם שרים ביחד!</div>
+</div>
+
+<div class="screen hidden" id="scores">
+  <div class="logo">🏆 טבלת ניקוד</div>
+  <div id="board"></div>
+  <div id="titles"></div>
+</div>
+
+<div id="strip" class="hidden">
+  <div id="sName"></div>
+  <div class="bar"><div class="bM"></div><div class="bA"></div><div class="b80"></div></div>
+  <div id="sNum"></div>
+  <div id="sVotes"></div>
+</div>
+
+<div id="mini"></div>
 <div class="corner hidden" id="corner"><div class="qr" id="qrSmall"></div><div>להצטרפות · <b class="roomCode"></b></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
 'use strict';
-/* The TV is the game's authority: it owns the state, picks the admin,
-   runs the admin's commands and confirms the singer's result. */
+/* The TV is the game's authority: it owns the state, picks the admin, runs the
+   admin's commands, asks the questions, judges the answers and the songs.
+   Inside the Tizen app it asks the app (window.parent) to play USB songs. */
 const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
 const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
-const PASS = 80, ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 3000, RESULT_SHOW_MS = 15000;
+const PASS = 80, METER_W = 0.79, ANSWER_S = 30, REVEAL_MS = 3500, RESULT_MS = 8000;
+const ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 4000, FREE_RESULT_MS = 15000;
 const $ = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
 const ls = {
   get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* no storage */ } }
@@ -102,21 +155,243 @@ function newCode() {
 
 const room = ls.get('kq_tv_room') || newCode();
 ls.set('kq_tv_room', room);
-const joinUrl = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '') + 'game.html?r=' + room;
+const base = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '');
+const joinUrl = base + 'game.html?r=' + room;
 
-let sb = null, chan = null, players = [], adminGoneAt = 0, resultTimer = 0;
-let game = { phase: 'lobby', song: 0, singer: '', singerName: '', dur: 0, result: null, admin: ls.get('kq_tv_admin') };
-let live = {};
+let sb = null, chan = null, players = [], adminGoneAt = 0, timer = 0, tick = 0;
+let game = {
+  phase: 'lobby', admin: ls.get('kq_tv_admin'), song: 0, singer: '', singerName: '', dur: 0, result: null,
+  on: false, order: [], names: {}, scores: {}, best: {}, turnNo: 0, turns: 15, cut: 90,
+  q: null, reveal: null, songTitle: '', penalty: false
+};
+let live = {}, correctIdx = -1, bank = [], qNo = 0;
+let usb = [], usedSongs = new Set(), videoOn = false, hasBridge = window.parent !== window;
+let lastClear = false;
 
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
 }
 
-function set(g) {
-  game = g;
+function set(patch) {
+  game = { ...game, ...patch };
   ls.set('kq_tv_admin', game.admin || '');
   send('game', game);
   render();
+}
+
+function later(fn, ms) { clearTimeout(timer); timer = setTimeout(fn, ms); }
+
+/* ---------- USB songs through the Tizen app ---------- */
+function toApp(msg) { if (hasBridge) window.parent.postMessage(msg, '*'); }
+
+window.addEventListener('message', e => {
+  if (e.source !== window.parent || !e.data || !e.data.kq) return;
+  const m = e.data;
+  if (m.kq === 'songs') { usb = Array.isArray(m.songs) ? m.songs : []; render(); }
+  else if (m.kq === 'ended') { videoOn = false; onVideoEnded(); }
+});
+
+function playSong(s) {
+  if (!s) return;
+  videoOn = true;
+  toApp({ kq: 'play', id: s.id });
+}
+
+function stopVideo() {
+  if (videoOn) toApp({ kq: 'stop' });
+  videoOn = false;
+}
+
+function pickSong() {
+  if (!usb.length) return null;
+  let pool = usb.filter(s => !usedSongs.has(s.id));
+  if (!pool.length) { usedSongs.clear(); pool = usb; }
+  const s = pool[Math.floor(Math.random() * pool.length)];
+  usedSongs.add(s.id);
+  return s;
+}
+
+/* ---------- questions (AI-made bank, no repeats per box) ---------- */
+function loadBank() {
+  fetch(base + 'questions.json', { cache: 'no-cache' })
+    .then(r => r.json())
+    .then(j => { bank = (j.questions || []).filter(q => q && q.q && q.a && q.a.length === 4); })
+    .catch(() => { bank = []; });
+}
+
+function pickQuestion() {
+  if (!bank.length) return null;
+  let seen = [];
+  try { seen = JSON.parse(ls.get('kq_seen') || '[]'); } catch (e) { seen = []; }
+  let pool = bank.filter(q => seen.indexOf(q.id) < 0);
+  if (!pool.length) { seen = []; pool = bank; }
+  const q = pool[Math.floor(Math.random() * pool.length)];
+  seen.push(q.id);
+  ls.set('kq_seen', JSON.stringify(seen.slice(-2000)));
+  return q;
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+/* ---------- game flow ---------- */
+function present(id) { return players.some(p => p.id === id); }
+function nameOf(id) { return (players.find(p => p.id === id) || {}).name || game.names[id] || ''; }
+
+function startGame(turns, cut) {
+  const order = players.slice().sort((x, y) => x.at - y.at).map(p => p.id);
+  if (!order.length) return;
+  const names = {};
+  players.forEach(p => { names[p.id] = p.name; });
+  const scores = {};
+  order.forEach(id => { scores[id] = 0; });
+  usedSongs.clear();
+  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, turns: turns || 15, cut: cut || 0 };
+  nextTurn();
+}
+
+function nextTurn() {
+  if (!game.on) return;
+  if (game.turnNo >= game.turns) { closing(); return; }
+  /* the next player in order who is still here */
+  for (let k = 0; k < game.order.length; k++) {
+    const id = game.order[(game.turnNo + k) % game.order.length];
+    if (present(id)) { ask(id); return; }
+  }
+  set({ on: false, phase: 'lobby' });          /* everyone left */
+}
+
+function ask(pid) {
+  const src = pickQuestion();
+  if (!src) { set({ phase: 'lobby', on: false }); $('conn').textContent = 'אין שאלות (questions.json)'; return; }
+  const answers = shuffle(src.a.map((t, i) => ({ t, ok: i === 0 })));
+  correctIdx = answers.findIndex(x => x.ok);
+  qNo++;
+  set({ phase: 'question', reveal: null,
+    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: ANSWER_S, by: pid, byName: nameOf(pid) } });
+  clearInterval(tick);
+  tick = setInterval(() => {
+    if (game.phase !== 'question') { clearInterval(tick); return; }
+    const left = game.q.left - 1;
+    if (left <= 0) { clearInterval(tick); judge(-1); return; }
+    game.q.left = left;
+    if (left % 5 === 0) send('game', game);   /* phones run their own countdown */
+    render();
+  }, 1000);
+}
+
+function judge(idx) {
+  if (game.phase !== 'question') return;
+  clearInterval(tick);
+  const pid = game.q.by, ok = idx === correctIdx;
+  const scores = { ...game.scores, [pid]: (game.scores[pid] || 0) + (ok ? 1 : -1) };
+  set({ phase: 'reveal', scores, reveal: { chosen: idx, correct: correctIdx, ok } });
+  later(() => { if (ok) { set({ turnNo: game.turnNo + 1 }); nextTurn(); } else penalty(pid); }, REVEAL_MS);
+}
+
+function penalty(pid) {
+  const s = pickSong();
+  live = {};
+  set({ phase: 'song', song: game.song + 1, singer: pid, singerName: nameOf(pid), dur: 0, result: null,
+    songTitle: s ? s.title : '', penalty: true });
+  playSong(s);
+  if (game.cut) later(endSong, game.cut * 1000 + 6000);   /* + calibration and countdown */
+}
+
+function endSong() {
+  if (game.phase !== 'song') return;
+  stopVideo();
+  const song = game.song;
+  send('stop', { song });
+  /* no result from the singer's phone: the point is not saved */
+  later(() => { if (game.phase === 'song' && game.song === song) onResult({ song, result: null }); }, STOP_GRACE_MS);
+}
+
+function onVideoEnded() {
+  if (game.phase === 'song') endSong();
+  else if (game.phase === 'closing') showScores();
+}
+
+function onResult(p) {
+  if (!p || p.song !== game.song || game.phase !== 'song') return;
+  stopVideo();
+  const r = p.result, pid = game.singer;
+  const patch = { phase: 'result', result: r };
+  if (game.penalty && game.on) {
+    const best = { ...game.best };
+    if (r && (best[pid] == null || r.total > best[pid])) best[pid] = r.total;
+    patch.best = best;
+    if (r && r.total >= PASS) patch.scores = { ...game.scores, [pid]: (game.scores[pid] || 0) + 1 };
+  }
+  set(patch);
+  if (game.penalty && game.on) later(() => { set({ turnNo: game.turnNo + 1 }); nextTurn(); }, RESULT_MS);
+  else later(() => { if (game.phase === 'result') set({ phase: 'lobby', result: null }); }, FREE_RESULT_MS);
+}
+
+function closing() {
+  clearInterval(tick);
+  const s = pickSong();
+  set({ phase: 'closing', on: false, songTitle: s ? s.title : '' });
+  if (s) playSong(s); else later(showScores, 4000);
+}
+
+function showScores() {
+  stopVideo();
+  clearTimeout(timer);
+  set({ phase: 'scores', on: false });
+}
+
+function toLobby() {
+  clearInterval(tick); clearTimeout(timer); stopVideo();
+  set({ phase: 'lobby', on: false, result: null, q: null, reveal: null });
+}
+
+/* ---------- admin ---------- */
+function checkAdmin() {
+  if (present(game.admin)) { adminGoneAt = 0; return; }
+  if (!players.length) return;
+  const first = players.slice().sort((x, y) => x.at - y.at)[0];
+  if (!game.admin) { set({ admin: first.id }); return; }
+  if (!adminGoneAt) adminGoneAt = Date.now();
+  else if (Date.now() - adminGoneAt > ADMIN_GRACE_MS) { adminGoneAt = 0; set({ admin: first.id }); }
+}
+
+function onCmd(p) {
+  if (!p || p.by !== game.admin) return;
+  switch (p.action) {
+  case 'game':                                  /* start the quiz */
+    if (game.on || game.phase === 'song') return;
+    startGame(+p.turns, +p.cut);
+    break;
+  case 'start': {                               /* free song, outside the quiz */
+    const t = players.find(x => x.id === p.target);
+    if (!t || game.on || game.phase === 'song') return;
+    live = {};
+    set({ phase: 'song', song: game.song + 1, singer: t.id, singerName: t.name, dur: +p.dur || 0, result: null, penalty: false, songTitle: '' });
+    break;
+  }
+  case 'stop':
+    if (game.phase === 'song') endSong();
+    else if (game.phase === 'closing') showScores();
+    break;
+  case 'end':                                   /* end the game: closing song, then scores */
+    if (!game.on) return;
+    clearTimeout(timer); stopVideo();
+    if (game.phase === 'song') send('stop', { song: game.song });
+    closing();
+    break;
+  case 'lobby':
+    if (game.phase === 'song') send('stop', { song: game.song });
+    toLobby();
+    break;
+  }
+}
+
+function onAnswer(p) {
+  if (!p || game.phase !== 'question' || !game.q || p.by !== game.q.by || p.n !== game.q.n) return;
+  judge(+p.idx);
 }
 
 /* ---------- rendering ---------- */
@@ -129,13 +404,36 @@ function drawQr(el) {
   } catch (e) { el.textContent = joinUrl; }
 }
 
-function nameOf(id) { return (players.find(p => p.id === id) || {}).name || ''; }
+function drawBar(scope, m, a) {
+  const fill = scope.querySelector('.bM'), aud = scope.querySelector('.bA');
+  if (a >= 0) {
+    fill.style.width = m + '%';
+    aud.className = 'bA pos'; aud.style.right = m + '%'; aud.style.width = Math.min(a, 100 - m) + '%';
+  } else {
+    const keep = Math.max(0, m + a);
+    fill.style.width = keep + '%';
+    aud.className = 'bA neg'; aud.style.right = keep + '%'; aud.style.width = (m - keep) + '%';
+  }
+}
+
+function scoreRows() {
+  return game.order.map(id => ({ id, name: game.names[id] || nameOf(id), s: game.scores[id] || 0 }))
+    .sort((x, y) => y.s - x.s);
+}
 
 function render() {
-  show('lobby', game.phase === 'lobby');
-  show('song', game.phase === 'song');
-  show('result', game.phase === 'result');
-  show('corner', game.phase !== 'lobby');
+  const ph = game.phase;
+  const clear = videoOn && (ph === 'song' || ph === 'closing');
+  document.body.classList.toggle('clear', clear);
+  if (clear !== lastClear) { lastClear = clear; toApp({ kq: 'clear', on: clear }); }
+  show('lobby', ph === 'lobby');
+  show('question', ph === 'question' || ph === 'reveal');
+  show('song', ph === 'song');
+  show('result', ph === 'result');
+  show('closing', ph === 'closing');
+  show('scores', ph === 'scores');
+  show('strip', videoOn && ph === 'song');
+  show('corner', ph !== 'lobby');
 
   $('chips').innerHTML = '';
   for (const p of players) {
@@ -144,82 +442,83 @@ function render() {
     c.textContent = (p.id === game.admin ? '👑 ' : '') + p.name;
     $('chips').append(c);
   }
-  $('adminLine').textContent = players.length
-    ? (game.admin && nameOf(game.admin) ? '👑 ' + nameOf(game.admin) + ' מנהל/ת את המשחק מהטלפון' : '')
-    : 'מחכים לשחקנים…';
+  const an = nameOf(game.admin);
+  $('adminLine').textContent = !players.length ? 'מחכים לשחקנים…' :
+    an ? '👑 ' + an + ' מתחיל/ה את המשחק מהטלפון (⚙️ ניהול)' : '';
+  $('mini').textContent = game.on
+    ? scoreRows().map(r => r.name + ' ' + r.s).join(' · ') + `   ·   תור ${Math.min(game.turnNo + 1, game.turns)}/${game.turns}`
+    : (hasBridge ? `🎵 ${usb.length} שירים ב-USB` : '');
 
-  if (game.phase === 'song') {
-    $('singer').textContent = '🎤 ' + game.singerName + ' שר/ה';
+  if ((ph === 'question' || ph === 'reveal') && game.q) {
+    const q = game.q, rv = game.reveal;
+    $('qHead').textContent = '🎯 התור של ' + q.byName;
+    $('qText').textContent = q.text;
+    $('qAns').innerHTML = '';
+    q.answers.forEach((t, i) => {
+      const d = document.createElement('div');
+      d.className = 'ans' + (rv ? (i === rv.correct ? ' good' : i === rv.chosen ? ' bad' : '') : '');
+      d.innerHTML = '<b>' + 'אבגד'[i] + '</b>';
+      d.append(document.createTextNode(t));
+      $('qAns').append(d);
+    });
+    $('qTimer').textContent = rv ? '' : q.left;
+    $('qTimer').classList.toggle('low', !rv && q.left <= 5);
+    $('verdict').textContent = !rv ? '' : rv.ok ? '✅ נכון! +1' :
+      (rv.chosen < 0 ? '⏰ נגמר הזמן! −1' : '❌ טעות! −1') + ' · עכשיו ' + q.byName + ' שר/ה!';
+  }
+
+  if (ph === 'song') {
     const on = live.song === game.song;
     const m = on ? (live.meter || 0) : 0, a = on ? (live.aud || 0) : 0, total = on ? (live.total || 0) : 0;
-    const aud = $('bAud');
-    if (a >= 0) {
-      $('bMeter').style.width = m + '%';
-      aud.className = 'pos'; aud.style.right = m + '%'; aud.style.width = Math.min(a, 100 - m) + '%';
-    } else {
-      const keep = Math.max(0, m + a);
-      $('bMeter').style.width = keep + '%';
-      aud.className = 'neg'; aud.style.right = keep + '%'; aud.style.width = (m - keep) + '%';
-    }
-    $('num').textContent = total;
-    $('num').style.color = total >= PASS ? 'var(--ok)' : '';
-    $('votes').textContent = on ? `👍 ${live.up || 0}   👎 ${live.down || 0}` : '';
+    $('singer').textContent = '🎤 ' + game.singerName + ' שר/ה' + (game.songTitle ? ' · ' + game.songTitle : '');
+    drawBar($('song'), m, a);
+    drawBar($('strip'), m, a);
+    $('num').textContent = total; $('sNum').textContent = total;
+    $('num').style.color = $('sNum').style.color = total >= PASS ? 'var(--ok)' : '';
+    $('sName').textContent = '🎤 ' + game.singerName;
+    const v = on ? `👍 ${live.up || 0}  👎 ${live.down || 0}` : '';
+    $('votes').textContent = v; $('sVotes').textContent = v;
     const st = on ? live.stage : '';
-    $('songStatus').textContent = st === 'sing' ? 'הצביעו בטלפון!' :
+    $('songStatus').textContent = st === 'sing' ? (game.songTitle ? 'הצביעו בטלפון!' : 'שירו שיר לבחירתכם · הצביעו בטלפון!') :
       st === 'cal' || st === 'count' ? 'מתכוננים…' : st === 'done' ? 'מחשבים…' : 'מחכים למיקרופון של ' + game.singerName + '…';
   }
 
-  if (game.phase === 'result' && game.result) {
+  if (ph === 'result') {
     const r = game.result;
     $('rName').textContent = '🎤 ' + game.singerName;
-    $('rScore').textContent = r.total;
-    $('rScore').style.color = r.total >= PASS ? 'var(--ok)' : 'var(--acc)';
-    $('rVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה!' : '🙈 הנקודה לא ניצלה';
-    $('rSplit').textContent = `שירה ${Math.round(r.meter * 0.79)} · קהל ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)} (👍 ${r.up} 👎 ${r.down})`;
-  }
-}
-
-/* ---------- authority ---------- */
-function checkAdmin() {
-  const present = players.some(p => p.id === game.admin);
-  if (present) { adminGoneAt = 0; return; }
-  if (!players.length) return;
-  const first = players.slice().sort((x, y) => x.at - y.at)[0];
-  if (!game.admin) { set({ ...game, admin: first.id }); return; }
-  if (!adminGoneAt) adminGoneAt = Date.now();
-  else if (Date.now() - adminGoneAt > ADMIN_GRACE_MS) { adminGoneAt = 0; set({ ...game, admin: first.id }); }
-}
-
-function toLobby() {
-  clearTimeout(resultTimer);
-  set({ ...game, phase: 'lobby', result: null });
-}
-
-function onCmd(p) {
-  if (!p || p.by !== game.admin) return;
-  if (p.action === 'start') {
-    const t = players.find(x => x.id === p.target);
-    if (!t || game.phase === 'song') return;
-    clearTimeout(resultTimer);
-    live = {};
-    set({ ...game, phase: 'song', song: game.song + 1, singer: t.id, singerName: t.name, dur: +p.dur || 0, result: null });
-  } else if (p.action === 'stop' || p.action === 'lobby') {
-    if (game.phase === 'song') {
-      const song = game.song;
-      send('stop', { song });
-      /* singer gone or not singing yet: back to the lobby */
-      setTimeout(() => { if (game.phase === 'song' && game.song === song) toLobby(); }, STOP_GRACE_MS);
-      if (p.action === 'stop') return;
+    if (r) {
+      $('rScore').textContent = r.total;
+      $('rScore').style.color = r.total >= PASS ? 'var(--ok)' : 'var(--acc)';
+      $('rVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה! +1' : '🙈 הנקודה לא ניצלה';
+      $('rSplit').textContent = `שירה ${Math.round(r.meter * METER_W)} · קהל ${r.aud >= 0 ? '+' : ''}${Math.round(r.aud)} (👍 ${r.up} 👎 ${r.down})`;
+    } else {
+      $('rScore').textContent = '—';
+      $('rScore').style.color = 'var(--mut)';
+      $('rVerdict').textContent = 'לא התקבלה מדידה מהטלפון';
+      $('rSplit').textContent = '';
     }
-    toLobby();
   }
-}
 
-function onResult(p) {
-  if (!p || p.song !== game.song || game.phase !== 'song') return;
-  set({ ...game, phase: 'result', result: p.result });
-  clearTimeout(resultTimer);
-  resultTimer = setTimeout(() => { if (game.phase === 'result') toLobby(); }, RESULT_SHOW_MS);
+  if (ph === 'scores') {
+    const rows = scoreRows();
+    $('board').innerHTML = '';
+    rows.forEach((r, i) => {
+      const d = document.createElement('div');
+      d.className = 'row';
+      d.textContent = (i === 0 ? '👑 ' : (i + 1) + '. ') + r.name;
+      const s = document.createElement('b'); s.textContent = r.s;
+      d.append(s);
+      $('board').append(d);
+    });
+    const king = rows[0];
+    let star = null;
+    Object.keys(game.best).forEach(id => { if (!star || game.best[id] > star.v) star = { id, v: game.best[id] }; });
+    $('titles').innerHTML = '';
+    const lines = [];
+    if (king) lines.push('👑 מלך/ת החידון: ' + king.name);
+    if (star) lines.push('⭐ כוכב/ת הערב: ' + (game.names[star.id] || nameOf(star.id)) + ' (' + star.v + ')');
+    lines.forEach(t => { const d = document.createElement('div'); d.textContent = t; $('titles').append(d); });
+  }
 }
 
 /* ---------- realtime ---------- */
@@ -233,6 +532,7 @@ function connect() {
       render();
     })
     .on('broadcast', { event: 'cmd' }, ({ payload }) => onCmd(payload))
+    .on('broadcast', { event: 'answer' }, ({ payload }) => onAnswer(payload))
     .on('broadcast', { event: 'result' }, ({ payload }) => onResult(payload))
     .on('broadcast', { event: 'live' }, ({ payload }) => { if (payload.song === game.song) { live = payload; render(); } })
     .on('broadcast', { event: 'hello' }, () => send('game', game))
@@ -250,9 +550,11 @@ function connect() {
     });
 }
 
-document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
+$$('.roomCode').forEach(el => { el.textContent = room; });
 drawQr($('qrBig'));
 drawQr($('qrSmall'));
+loadBank();
+toApp({ kq: 'hello' });
 setInterval(() => { send('game', game); checkAdmin(); }, 5000);   /* heartbeat + admin hand-over */
 if (window.supabase) {
   sb = window.supabase.createClient(SB_URL, SB_KEY);

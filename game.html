@@ -38,6 +38,13 @@
   @keyframes flash { 0%,100% { background:var(--bg); } 50% { background:#5a1a3a; } }
   body.flash { animation:flash .5s 4; }
   #inapp { background:#4a1630; border-radius:12px; padding:12px; margin-bottom:12px; font-size:16px; }
+  .abtns { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  .abtns button { font-size:20px; padding:18px 8px; min-height:84px; background:#2a2445; border:3px solid transparent; }
+  .abtns button.good { background:#16452c; border-color:var(--ok); }
+  .abtns button.bad { background:#4a1630; border-color:var(--acc); }
+  #qClock { font-size:40px; font-weight:800; }
+  #qClock.low { color:var(--acc); }
+  .brow { display:flex; justify-content:space-between; padding:8px 4px; border-bottom:1px solid #2a2445; font-size:18px; }
   #resScore { font-size:72px; font-weight:800; }
   /* admin */
   #adminBtn { position:fixed; bottom:16px; left:16px; right:16px; width:auto; background:#3a3358; }
@@ -87,6 +94,23 @@
   <p class="mut">לחיצה נוספת מבטלת. אפשר לשנות עד סוף השיר.</p>
 </div>
 
+<!-- quiz question (the answers are on the phone of the player whose turn it is) -->
+<div class="card hidden" id="vQuestion">
+  <div class="mut" id="qWho"></div>
+  <div class="big" id="qText"></div>
+  <div id="qClock"></div>
+  <div class="abtns" id="qBtns"></div>
+  <div class="big" id="qVerdict"></div>
+</div>
+
+<!-- closing song + scoreboard -->
+<div class="card hidden" id="vClosing"><div class="big">🎶 שיר סיום – כולם שרים ביחד!</div></div>
+<div class="card hidden" id="vScores">
+  <div class="big">🏆 טבלת ניקוד</div>
+  <div id="board"></div>
+  <div class="mut" id="titles" style="margin-top:10px;white-space:pre-line"></div>
+</div>
+
 <!-- result -->
 <div class="card hidden" id="vResult">
   <div class="big" id="resName"></div>
@@ -100,7 +124,16 @@
   <div class="big">⚙️ ניהול המשחק</div>
   <div class="mut">חדר <b class="roomCode"></b> · ה-QR להצטרפות מוצג בטלוויזיה</div>
   <div style="text-align:right;margin-top:8px">
-    <div class="mut">משך שיר</div>
+    <div class="mut">🎮 חידון</div>
+    <div class="row2" style="margin-top:4px">
+      <select id="turnsSel"><option value="10">10 תורות</option><option value="15" selected>15 תורות</option><option value="20">20 תורות</option></select>
+      <select id="cutSel"><option value="60">שיר: דקה</option><option value="90" selected>שיר: דקה וחצי</option><option value="0">שיר מלא</option></select>
+    </div>
+    <div class="row2">
+      <button id="gameBtn">🎮 התחל משחק</button>
+      <button class="sec" id="endBtn">🏁 סיים משחק</button>
+    </div>
+    <div class="mut" style="margin-top:14px">🎤 שיר חופשי (מחוץ לחידון) · משך מדידה</div>
     <select id="durSel"><option value="0" selected>עד שעוצרים</option><option value="45">45 שנ׳</option><option value="90">90 שנ׳</option><option value="180">3 דק׳</option></select>
     <div class="mut">שחקנים – בחר מי שר</div>
     <div id="plist"></div>
@@ -170,6 +203,12 @@ function render() {
   show('vSing', named && iSing);
   show('vVote', named && game.phase === 'song' && !iSing);
   show('vResult', named && game.phase === 'result');
+  const quiz = game.phase === 'question' || game.phase === 'reveal';
+  show('vQuestion', named && quiz);
+  show('vClosing', named && game.phase === 'closing');
+  show('vScores', named && game.phase === 'scores');
+  if (quiz && game.q) renderQuestion();
+  if (game.phase === 'scores') renderScores();
   if (!isAdmin()) adminOpen = false;
   show('adminBtn', named && isAdmin());
   show('admin', named && isAdmin() && adminOpen);
@@ -224,7 +263,76 @@ function renderAdmin() {
     row.append(nm, b);
     $('plist').append(row);
   }
-  $('stopBtn').disabled = !busy;
+  $('stopBtn').disabled = !(busy || game.phase === 'closing');
+  $('gameBtn').disabled = !!game.on || busy;
+  $('endBtn').disabled = !game.on;
+  for (const b of $('plist').querySelectorAll('button')) b.disabled = busy || !!game.on;
+}
+
+/* ---------- quiz on the phone ---------- */
+let qLocal = { n: -1, ends: 0, picked: -1 }, qTick = 0;
+
+function renderQuestion() {
+  const q = game.q, rv = game.reveal, mine = q.by === myId;
+  if (qLocal.n !== q.n) qLocal = { n: q.n, ends: 0, picked: -1 };
+  /* our own countdown, re-aligned when the TV's number differs by more than 2 s */
+  const want = Date.now() + q.left * 1000;
+  if (!rv && (!qLocal.ends || Math.abs(qLocal.ends - want) > 2000)) qLocal.ends = want;
+  $('qWho').textContent = mine ? '🎯 התור שלך!' : '🎯 התור של ' + q.byName;
+  $('qText').textContent = q.text;
+  const btns = $('qBtns');
+  if (btns.dataset.n !== String(q.n) || btns.dataset.rv !== String(!!rv)) {
+    btns.dataset.n = q.n; btns.dataset.rv = !!rv;
+    btns.innerHTML = '';
+    q.answers.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.textContent = 'אבגד'[i] + '. ' + t;
+      b.disabled = !mine || !!rv || qLocal.picked >= 0;
+      if (rv) b.className = i === rv.correct ? 'good' : i === rv.chosen ? 'bad' : '';
+      else if (i === qLocal.picked) b.className = 'good';
+      b.onclick = () => answer(i);
+      btns.append(b);
+    });
+  }
+  show('qBtns', mine || !!rv);
+  $('qVerdict').textContent = !rv ? (mine ? '' : 'עונה בטלפון שלו/ה…') : rv.ok ? '✅ נכון! +1' :
+    (rv.chosen < 0 ? '⏰ נגמר הזמן! −1' : '❌ טעות! −1') + (mine ? ' · עכשיו אתה שר!' : ' · עכשיו ' + q.byName + ' שר/ה!');
+  clearInterval(qTick);
+  const draw = () => {
+    const left = Math.max(0, Math.ceil((qLocal.ends - Date.now()) / 1000));
+    $('qClock').textContent = rv ? '' : left;
+    $('qClock').classList.toggle('low', !rv && left <= 5);
+  };
+  draw();
+  if (!rv) qTick = setInterval(draw, 250);
+}
+
+function answer(i) {
+  const q = game.q;
+  if (!q || q.by !== myId || game.reveal || qLocal.picked >= 0) return;
+  qLocal.picked = i;
+  if (navigator.vibrate) navigator.vibrate(30);
+  send('answer', { by: myId, n: q.n, idx: i });
+  $('qBtns').dataset.n = '';                    /* redraw with the pick locked */
+  render();
+}
+
+function renderScores() {
+  const rows = (game.order || []).map(id => ({ id, name: game.names[id] || '?', s: game.scores[id] || 0 }))
+    .sort((x, y) => y.s - x.s);
+  $('board').innerHTML = '';
+  rows.forEach((r, i) => {
+    const d = document.createElement('div');
+    d.className = 'brow';
+    d.textContent = (i === 0 ? '👑 ' : (i + 1) + '. ') + r.name + (r.id === myId ? ' (אתה)' : '');
+    const b = document.createElement('b'); b.textContent = r.s;
+    d.append(b);
+    $('board').append(d);
+  });
+  let star = null;
+  Object.keys(game.best || {}).forEach(id => { if (!star || game.best[id] > star.v) star = { id, v: game.best[id] }; });
+  $('titles').textContent = (rows[0] ? '👑 מלך/ת החידון: ' + rows[0].name : '') +
+    (star ? '\n⭐ כוכב/ת הערב: ' + (game.names[star.id] || '?') + ' (' + star.v + ')' : '');
 }
 
 /* ---------- admin actions (sent to the TV) ---------- */
@@ -600,6 +708,8 @@ $('down').onclick = () => vote(-1);
 $('adminBtn').onclick = () => { adminOpen = !adminOpen; render(); };
 $('stopBtn').onclick = stopSong;
 $('lobbyBtn').onclick = () => cmd('lobby');
+$('gameBtn').onclick = () => { cmd('game', { turns: +$('turnsSel').value, cut: +$('cutSel').value }); adminOpen = false; render(); };
+$('endBtn').onclick = () => { if (confirm('לסיים את המשחק? יתנגן שיר סיום ואז טבלת הניקוד.')) cmd('end'); };
 document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
 
 if (!window.supabase) {
