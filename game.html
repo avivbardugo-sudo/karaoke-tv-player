@@ -103,6 +103,9 @@
   <div class="big" id="qVerdict"></div>
 </div>
 
+<!-- the TV's wheel of fortune draws the penalty song -->
+<div class="card hidden" id="vWheel"><div class="big" id="wheelText"></div></div>
+
 <!-- closing song + scoreboard -->
 <div class="card hidden" id="vClosing"><div class="big">🎶 שיר סיום – כולם שרים ביחד!</div></div>
 <div class="card hidden" id="vScores">
@@ -216,6 +219,13 @@ function render() {
   const quiz = game.phase === 'question' || game.phase === 'reveal';
   show('vQuestion', named && quiz);
   show('vClosing', named && game.phase === 'closing');
+  show('vWheel', named && game.phase === 'wheel');
+  if (game.phase === 'wheel') {
+    const me = game.singer === myId;
+    $('wheelText').textContent = game.songTitle
+      ? '🎵 ' + game.songTitle + (me ? ' · תתכונן לשיר!' : '')
+      : (me ? '🎡 מגרילים לך שיר… הסתכל בטלוויזיה' : '🎡 מגרילים שיר ל' + game.singerName + '…');
+  }
   show('vScores', named && game.phase === 'scores');
   if (quiz && game.q) renderQuestion();
   if (game.phase === 'scores') renderScores();

@@ -73,6 +73,8 @@
   .corner .qr { padding:.5vw; border-radius:.8vw; }
   .corner .qr svg { width:9vw; height:9vw; }
   #mini { position:absolute; top:2vh; right:3vw; font-size:1.6vw; color:var(--mut); }
+  #wheelCap { font-size:3.4vw; font-weight:900; color:#fde68a; margin-bottom:2vh; min-height:5vh; text-shadow:0 .6vh 2.4vh rgba(0,0,0,.7); }
+  #wheel { width:72vh; height:72vh; }
   #kqv { position:fixed; top:0; left:0; width:100%; height:100%; z-index:1; background:#000; display:none; }
   #kqv.on { display:block; }
   .screen, #strip, #mini, .corner, #conn { z-index:5; }
@@ -102,6 +104,11 @@
   <div id="qAns"></div>
   <div id="qTimer"></div>
   <div id="verdict"></div>
+</div>
+
+<div class="screen hidden" id="wheelScr">
+  <div id="wheelCap"></div>
+  <canvas id="wheel" width="800" height="800"></canvas>
 </div>
 
 <div class="screen hidden" id="song">
@@ -356,11 +363,114 @@ function judge(idx) {
 
 function penalty(pid) {
   const s = pickSong();
+  if (!s) { startSong(pid, null); return; }
+  /* the wheel of fortune draws the song, then it plays */
+  set({ phase: 'wheel', singer: pid, singerName: nameOf(pid), songTitle: '' });
+  spinWheel(s.title, () => {
+    set({ songTitle: s.title });
+    later(() => startSong(pid, s), WHEEL_SHOW_MS);
+  });
+}
+
+function startSong(pid, s) {
+  stopWheel();
   live = {};
+  playSong(s);                                  /* before set(): the first render is already clear */
   set({ phase: 'song', song: game.song + 1, singer: pid, singerName: nameOf(pid), dur: 0, result: null,
     songTitle: s ? s.title : '', penalty: true });
-  playSong(s);
   if (game.cut) later(endSong, game.cut * 1000 + 6000);   /* + calibration and countdown */
+}
+
+/* ---------- wheel of fortune ---------- */
+const WHEEL_SPIN_MS = 1500, WHEEL_LAND_MS = 4500, WHEEL_SHOW_MS = 1800, WHEEL_SEGMENTS = 10;
+const WHEEL_COLORS = ['#7c3aed', '#db2777', '#f59e0b', '#059669', '#2563eb', '#dc2626', '#0891b2', '#9333ea', '#ea580c', '#16a34a'];
+let wheel = null, actx = null;
+
+function tickSound() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state !== 'running') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.value = 1400; g.gain.value = 0.08;
+    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.05);
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + 0.05);
+  } catch (e) { /* no sound */ }
+}
+
+function shortTitle(t) { t = String(t || ''); return t.length > 18 ? t.slice(0, 17) + '…' : t; }
+
+function wheelTitles(chosen) {
+  const pool = shuffle(usb.map(x => x.title).filter(t => t !== chosen)).slice(0, WHEEL_SEGMENTS - 1);
+  pool.push(chosen);
+  let titles = [];
+  while (titles.length < 8) titles = titles.concat(pool);
+  return shuffle(titles.slice(0, Math.max(8, pool.length)));
+}
+
+function drawWheel() {
+  const c = $('wheel'), g = c.getContext('2d');
+  const n = wheel.titles.length, seg = 2 * Math.PI / n, r = 380, cx = 400, cy = 400;
+  g.clearRect(0, 0, 800, 800);
+  g.save(); g.translate(cx, cy); g.rotate(wheel.angle);
+  for (let i = 0; i < n; i++) {
+    g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, i * seg, (i + 1) * seg); g.closePath();
+    g.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length]; g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 3; g.stroke();
+    g.save(); g.rotate((i + 0.5) * seg);
+    g.fillStyle = '#fff'; g.font = 'bold 27px Arial'; g.textBaseline = 'middle'; g.direction = 'rtl';
+    /* keep the titles upright on the left half of the wheel */
+    if (Math.cos(wheel.angle + (i + 0.5) * seg) < 0) {
+      g.rotate(Math.PI); g.textAlign = 'left'; g.fillText(shortTitle(wheel.titles[i]), -(r - 24), 0);
+    } else {
+      g.textAlign = 'right'; g.fillText(shortTitle(wheel.titles[i]), r - 24, 0);
+    }
+    g.restore();
+  }
+  g.restore();
+  g.beginPath(); g.arc(cx, cy, 46, 0, 2 * Math.PI);
+  g.fillStyle = '#1e1b4b'; g.fill(); g.lineWidth = 6; g.strokeStyle = '#fde68a'; g.stroke();
+  g.font = '44px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🎤', cx, cy + 2);
+  g.beginPath(); g.moveTo(cx - 30, 0); g.lineTo(cx + 30, 0); g.lineTo(cx, 60); g.closePath();
+  g.fillStyle = '#fde68a'; g.fill(); g.lineWidth = 4; g.strokeStyle = '#7c2d12'; g.stroke();
+}
+
+function wheelIndexAtPointer() {
+  const n = wheel.titles.length, seg = 2 * Math.PI / n;
+  const a = ((-Math.PI / 2 - wheel.angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  return Math.floor(a / seg);
+}
+
+/* spin freely, then ease out onto `title` (top pointer) */
+function spinWheel(title, done) {
+  stopWheel();
+  wheel = { titles: wheelTitles(title), angle: Math.random() * 6.28, speed: 0.18, landing: null, last: -1, t0: Date.now() };
+  const frame = () => {
+    if (!wheel) return;
+    if (!wheel.landing && Date.now() - wheel.t0 > WHEEL_SPIN_MS) {
+      const n = wheel.titles.length, seg = 2 * Math.PI / n, idx = wheel.titles.indexOf(title);
+      let to = -Math.PI / 2 - (idx + 0.5) * seg + (Math.random() - 0.5) * seg * 0.6;
+      while (to < wheel.angle + 3 * 2 * Math.PI) to += 2 * Math.PI;
+      wheel.landing = { from: wheel.angle, to, t0: Date.now() };
+    }
+    if (wheel.landing) {
+      const L = wheel.landing, k = Math.min(1, (Date.now() - L.t0) / WHEEL_LAND_MS);
+      wheel.angle = L.from + (L.to - L.from) * (1 - Math.pow(1 - k, 3));
+      if (k >= 1) { drawWheel(); wheel.frame = 0; done(); return; }
+    } else {
+      wheel.angle += wheel.speed;
+    }
+    const idx = wheelIndexAtPointer();
+    if (idx !== wheel.last) { wheel.last = idx; tickSound(); }
+    drawWheel();
+    wheel.frame = requestAnimationFrame(frame);
+  };
+  frame();
+}
+
+function stopWheel() {
+  if (wheel && wheel.frame) cancelAnimationFrame(wheel.frame);
+  wheel = null;
 }
 
 function endSong() {
@@ -394,7 +504,7 @@ function onResult(p) {
 }
 
 function closing() {
-  clearInterval(tick);
+  clearInterval(tick); stopWheel();
   const s = pickSong();
   set({ phase: 'closing', on: false, songTitle: s ? s.title : '' });
   if (s) playSong(s); else later(showScores, 4000);
@@ -407,7 +517,7 @@ function showScores() {
 }
 
 function toLobby() {
-  clearInterval(tick); clearTimeout(timer); stopVideo();
+  clearInterval(tick); clearTimeout(timer); stopVideo(); stopWheel();
   set({ phase: 'lobby', on: false, result: null, q: null, reveal: null });
 }
 
@@ -503,6 +613,7 @@ function render() {
   if (clear !== lastClear) { lastClear = clear; toApp({ kq: 'clear', on: clear }); }
   show('lobby', ph === 'lobby');
   show('question', ph === 'question' || ph === 'reveal');
+  show('wheelScr', ph === 'wheel');
   show('song', ph === 'song');
   show('result', ph === 'result');
   show('closing', ph === 'closing');
@@ -541,6 +652,8 @@ function render() {
     $('verdict').textContent = !rv ? '' : rv.ok ? '✅ נכון! +1' :
       (rv.chosen < 0 ? '⏰ נגמר הזמן! −1' : '❌ טעות! −1') + ' · עכשיו ' + q.byName + ' שר/ה!';
   }
+
+  if (ph === 'wheel') $('wheelCap').textContent = game.songTitle ? '🎵 ' + game.songTitle : '🎡 מגרילים שיר ל' + game.singerName + '…';
 
   if (ph === 'song') {
     const on = live.song === game.song;
