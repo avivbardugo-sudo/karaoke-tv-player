@@ -310,7 +310,7 @@ function shuffle(a) {
 function present(id) { return players.some(p => p.id === id); }
 function nameOf(id) { return (players.find(p => p.id === id) || {}).name || game.names[id] || ''; }
 
-function startGame(turns, cut) {
+function startGame(turns, cut, secs) {
   const order = players.slice().sort((x, y) => x.at - y.at).map(p => p.id);
   if (!order.length) return;
   const names = {};
@@ -318,7 +318,8 @@ function startGame(turns, cut) {
   const scores = {};
   order.forEach(id => { scores[id] = 0; });
   usedSongs.clear();
-  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, turns: turns || 15, cut: cut || 0 };
+  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, turns: turns || 15, cut: cut || 0,
+    secs: [10, 15, 20, 30].indexOf(secs) >= 0 ? secs : ANSWER_S };
   nextTurn();
 }
 
@@ -340,7 +341,7 @@ function ask(pid) {
   correctIdx = answers.findIndex(x => x.ok);
   qNo++;
   set({ phase: 'question', reveal: null,
-    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: ANSWER_S, by: pid, byName: nameOf(pid) } });
+    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: game.secs || ANSWER_S, by: pid, byName: nameOf(pid) } });
   clearInterval(tick);
   tick = setInterval(() => {
     if (game.phase !== 'question') { clearInterval(tick); return; }
@@ -536,7 +537,7 @@ function onCmd(p) {
   switch (p.action) {
   case 'game':                                  /* start the quiz */
     if (game.on || game.phase === 'song') return;
-    startGame(+p.turns, +p.cut);
+    startGame(+p.turns, +p.cut, +p.secs);
     break;
   case 'start': {                               /* free song, outside the quiz */
     const t = players.find(x => x.id === p.target);
