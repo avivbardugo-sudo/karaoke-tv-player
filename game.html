@@ -180,6 +180,16 @@ let live = { song: -1, stage: '', total: 0 };
 let myVote = 0, voteSong = -1, adminOpen = false;
 let pendingResult = null, resultTimer = 0, screenLock = null, lastMeter = 0, toastTimer = 0;
 
+/* TEMPORARY: the singer's mic numbers to the developer's diagnostics channel */
+function diag(m) {
+  try {
+    fetch(SB_URL + '/realtime/v1/api/broadcast', { method: 'POST',
+      headers: { apikey: SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ topic: 'karoque-diag', event: 'log',
+        payload: { m: 'phone ' + (myName || '?') + ': ' + String(m).slice(0, 300) } }] }) });
+  } catch (e) { /* best effort */ }
+}
+
 function send(event, payload) {
   if (chan) chan.send({ type: 'broadcast', event, payload });
 }
@@ -495,6 +505,7 @@ async function startMic(auto) {
     });
   } catch (e) {
     if (stage === 'starting') stage = 'ready';
+    diag('mic start failed: ' + (e && (e.name || e.message)) + (auto ? ' (auto)' : ' (tap)') + ' ctx=' + (ctx && ctx.state));
     if (auto) nudge(); else alert(micHelp(e));
     nudged = true;
     render();
@@ -503,6 +514,7 @@ async function startMic(auto) {
   if (stage !== 'starting') { s.getTracks().forEach(t => t.stop()); return; }   /* song was stopped meanwhile */
   stream = s;
   srcNode = ctx.createMediaStreamSource(stream);
+  diag('mic on, rate ' + ctx.sampleRate + ', ' + navigator.userAgent.slice(0, 60));
   an = ctx.createAnalyser();
   an.fftSize = 2048;
   srcNode.connect(an);
@@ -526,11 +538,12 @@ function loop(now) {
 
   if (stage === 'cal') {
     calDb.push(db);
-    $('singStatus').textContent = '🤫 רגע של שקט… ' + Math.ceil(CAL_S - el);
+    $('singStatus').textContent = '🤫 רגע של שקט… החזק את הטלפון קרוב לפה, כמו מיקרופון · ' + Math.ceil(CAL_S - el);
     if (el >= CAL_S) {
       const s = calDb.slice().sort((a, b) => a - b);
-      baseDb = s[Math.floor(s.length * 0.7)];
-      thrDb = baseDb + 5;
+      baseDb = s[Math.floor(s.length * 0.6)];
+      thrDb = baseDb + 3;
+      diag(`cal base ${baseDb.toFixed(1)} dB (min ${s[0].toFixed(1)}, max ${s[s.length - 1].toFixed(1)}), thr ${thrDb.toFixed(1)}`);
       stage = 'count'; t0 = now;
     }
     return;
@@ -545,13 +558,18 @@ function loop(now) {
   const f = db > thrDb ? yin(buf, ctx.sampleRate) : -1;
   frames.push({ t: el, db, loud: db > thrDb, voiced: f > 0, m: f > 0 ? 69 + 12 * Math.log2(f / 440) : 0 });
   const sec = game.dur ? Math.max(0, Math.ceil(game.dur - el)) : Math.floor(el);
-  $('singStatus').textContent = '🎤 ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  $('singStatus').textContent = '🎤 קרוב לפה! · ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
   if (now - lastLive > 1000) {
     lastLive = now;
     lastMeter = meterScore();
     live.total = combine(lastMeter);
     pushLive();
     renderSinger();
+    if (Math.floor(el) % 3 === 0) {
+      const recent = frames.slice(-90), n = recent.length || 1;
+      diag(`sing t=${Math.floor(el)} db=${db.toFixed(1)} loud=${Math.round(recent.filter(x => x.loud).length / n * 100)}% ` +
+        `voiced=${Math.round(recent.filter(x => x.voiced).length / n * 100)}% meter=${lastMeter} total=${live.total}`);
+    }
   }
   if (el >= (game.dur || MAX_SONG_S)) finish();
 }
