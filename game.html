@@ -149,6 +149,8 @@
   <button class="sec" id="drawRandom" style="margin-top:10px"></button>
 </div>
 
+<div class="card hidden" id="vCat"><div class="big" id="catText"></div></div>
+
 <!-- the TV's wheel of fortune draws the penalty song -->
 <div class="card hidden" id="vWheel"><div class="big" id="wheelText"></div></div>
 
@@ -177,6 +179,7 @@
     <div class="row2" style="margin-top:4px">
       <select id="turnsSel"><option value="10">10 תורות</option><option value="15" selected>15 תורות</option><option value="20">20 תורות</option></select>
       <select id="secsSel"><option value="10">תשובה: 10 שנ׳</option><option value="15">תשובה: 15 שנ׳</option><option value="20">תשובה: 20 שנ׳</option><option value="30" selected>תשובה: 30 שנ׳</option></select>
+      <select id="catSel"><option value="0">קטגוריה: בלי הצגה</option><option value="2" selected>קטגוריה: 2 שנ׳</option><option value="3">קטגוריה: 3 שנ׳</option><option value="5">קטגוריה: 5 שנ׳</option></select>
       <select id="cutSel"><option value="60">שיר: דקה</option><option value="90" selected>שיר: דקה וחצי</option><option value="0">שיר מלא</option></select>
     </div>
     <div class="row2">
@@ -298,6 +301,8 @@ function render() {
   show('vClosing', named && game.phase === 'closing');
   show('vWheel', named && game.phase === 'wheel');
   show('vDraw', named && game.phase === 'draw' && !!game.draw);
+  show('vCat', named && game.phase === 'cat' && !!game.cat);
+  if (game.phase === 'cat' && game.cat) $('catText').textContent = game.cat.icon + ' ' + game.cat.he;
   if (game.phase === 'draw' && game.draw) renderDraw();
   show('scanBtn', named && !!room && !iSing && !(game.phase === 'draw' && game.draw && game.draw.pid === myId));
   if (game.phase === 'wheel') {
@@ -985,7 +990,7 @@ $('hostScan').onclick = openScan;
 $('drawRandom').onclick = () => send('card', { by: myId, id: 'RANDOM' });
 $('stopBtn').onclick = stopSong;
 $('lobbyBtn').onclick = () => cmd('lobby');
-$('gameBtn').onclick = () => { cmd('game', { turns: +$('turnsSel').value, cut: +$('cutSel').value, secs: +$('secsSel').value }); adminOpen = false; render(); };
+$('gameBtn').onclick = () => { cmd('game', { turns: +$('turnsSel').value, cut: +$('cutSel').value, secs: +$('secsSel').value, catSecs: +$('catSel').value }); adminOpen = false; render(); };
 $('endBtn').onclick = () => { if (confirm('לסיים את המשחק? יתנגן שיר סיום ואז טבלת הניקוד.')) cmd('end'); };
 document.querySelectorAll('.roomCode').forEach(el => { el.textContent = room; });
 

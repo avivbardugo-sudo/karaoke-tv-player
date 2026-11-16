@@ -83,6 +83,9 @@
   #drawIcon { font-size:12vw; line-height:1; }
   #drawText { font-size:3.8vw; font-weight:800; margin-top:3vh; }
   #drawHint { font-size:2.2vw; margin-top:2.5vh; }
+  #catIcon { font-size:16vw; line-height:1.1; }
+  #catName { font-size:6vw; font-weight:900; color:var(--warn); margin-top:2vh; }
+  #catDeck { font-size:2.6vw; margin-top:2vh; }
   #qCat { font-size:2.2vw; color:var(--warn); margin-bottom:1vh; }
   .ans.cut { opacity:.15; }
   #flash { position:absolute; bottom:3vh; left:50%; transform:translateX(-50%); z-index:6; background:#d4a017; color:#2a1a00;
@@ -110,6 +113,12 @@
   <div id="drawIcon"></div>
   <div id="drawText"></div>
   <div class="mut" id="drawHint"></div>
+</div>
+
+<div class="screen hidden" id="catScr">
+  <div class="mut" id="catDeck"></div>
+  <div id="catIcon"></div>
+  <div id="catName"></div>
 </div>
 
 <div class="screen hidden" id="question">
@@ -173,7 +182,7 @@
 const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
 const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
 const PASS = 80, METER_W = 0.79, ANSWER_S = 30, REVEAL_MS = 3500, RESULT_MS = 8000;
-const LOGIC_CARD = 'Q20', LOGIC_S = 30;          /* riddles always get at least 30 s */
+const LOGIC_CARD = 'Q20', LOGIC_S = 30, CAT_S = 2;   /* CAT_S: the drawn category is shown alone first */          /* riddles always get at least 30 s */
 const ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 4000, FREE_RESULT_MS = 15000, DUET_WAIT_MS = 6000, FLASH_MS = 4000;
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
@@ -366,7 +375,7 @@ function shuffle(a) {
 function present(id) { return players.some(p => p.id === id); }
 function nameOf(id) { return (players.find(p => p.id === id) || {}).name || game.names[id] || ''; }
 
-function startGame(turns, cut, secs) {
+function startGame(turns, cut, secs, catSecs) {
   const order = players.slice().sort((x, y) => x.at - y.at).map(p => p.id);
   if (!order.length) return;
   const names = {};
@@ -376,7 +385,8 @@ function startGame(turns, cut, secs) {
   usedSongs.clear();
   game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, ptr: 0, pending: [], rejected: [], used: [], partner: '',
     turns: turns || 15, cut: cut || 0,
-    secs: [10, 15, 20, 30].indexOf(secs) >= 0 ? secs : ANSWER_S };
+    secs: [10, 15, 20, 30].indexOf(secs) >= 0 ? secs : ANSWER_S,
+    catSecs: [0, 2, 3, 5].indexOf(catSecs) >= 0 ? catSecs : CAT_S };
   nextTurn();
 }
 
@@ -646,7 +656,12 @@ function onCard(p) {
   if (d.duet && !d.partner) { ack(by, false, 'קודם בחר שותף לדואט'); return; }
   const cat = c ? id : randomCat(d.deck);
   ack(by, true, '');
-  if (d.deck === 'q') ask(d.pid, cat); else penalty(d.pid, cat);
+  const go = () => { if (d.deck === 'q') ask(d.pid, cat); else penalty(d.pid, cat); };
+  const ms = (game.catSecs == null ? CAT_S : game.catSecs) * 1000;
+  if (!ms || !catInfo(cat)) { go(); return; }
+  /* the category alone on the screen for a moment (the admin sets how long) */
+  set({ phase: 'cat', cat: catInfo(cat) });
+  later(go, ms);
 }
 
 /* special cards: one use per game, by whoever holds the card, at its moment */
@@ -716,7 +731,7 @@ function onCmd(p) {
   switch (p.action) {
   case 'game':                                  /* start the quiz */
     if (game.on || game.phase === 'song') return;
-    startGame(+p.turns, +p.cut, +p.secs);
+    startGame(+p.turns, +p.cut, +p.secs, p.catSecs == null ? CAT_S : +p.catSecs);
     break;
   case 'start': {                               /* free song, outside the quiz */
     const t = players.find(x => x.id === p.target);
@@ -814,6 +829,12 @@ function render() {
   if (clear !== lastClear) { lastClear = clear; toApp({ kq: 'clear', on: clear }); }
   show('lobby', ph === 'lobby');
   show('drawScr', ph === 'draw');
+  show('catScr', ph === 'cat');
+  if (ph === 'cat' && game.cat && game.draw) {
+    $('catDeck').textContent = (game.draw.deck === 'q' ? '❓ שאלה ל' : '🎵 שיר ל') + game.draw.name + ' בקטגוריה:';
+    $('catIcon').textContent = game.cat.icon;
+    $('catName').textContent = game.cat.he;
+  }
   show('flash', !!flashText && !clear);
   $('flash').textContent = flashText;
   show('question', ph === 'question' || ph === 'reveal');
