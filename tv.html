@@ -173,6 +173,7 @@
 const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
 const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
 const PASS = 80, METER_W = 0.79, ANSWER_S = 30, REVEAL_MS = 3500, RESULT_MS = 8000;
+const LOGIC_CARD = 'Q20', LOGIC_S = 30;          /* riddles always get at least 30 s */
 const ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 4000, FREE_RESULT_MS = 15000, DUET_WAIT_MS = 6000, FLASH_MS = 4000;
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
@@ -342,9 +343,12 @@ function pickQuestion(cat) {
   try { seen = JSON.parse(ls.get('kq_seen') || '[]'); } catch (e) { seen = []; }
   let pool = bank.filter(q => seen.indexOf(q.id) < 0);
   if (!pool.length) { seen = []; pool = bank; }
-  const want = catBank[cat];
-  if (want) {
-    const c = pool.filter(q => want.indexOf(q.cat) >= 0);
+  /* only the scanned card's category (questions.json: cat = card id); all seen: repeat within it */
+  if (cat) {
+    const want = catBank[cat] || [];
+    const inCat = q => q.cat === cat || want.indexOf(q.cat) >= 0;
+    let c = pool.filter(inCat);
+    if (!c.length) c = bank.filter(inCat);
     if (c.length) pool = c;
   }
   const q = pool[Math.floor(Math.random() * pool.length)];
@@ -402,7 +406,7 @@ function ask(pid, cat) {
   correctIdx = answers.findIndex(x => x.ok);
   qNo++;
   set({ phase: 'question', reveal: null, cat: catInfo(cat),
-    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: game.secs || ANSWER_S, by: pid, byName: nameOf(pid), cut: [], extra: 0 } });
+    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: cat === LOGIC_CARD ? Math.max(LOGIC_S, game.secs || ANSWER_S) : game.secs || ANSWER_S, by: pid, byName: nameOf(pid), cut: [], extra: 0 } });
   clearInterval(tick);
   tick = setInterval(() => {
     if (game.phase !== 'question') { clearInterval(tick); return; }

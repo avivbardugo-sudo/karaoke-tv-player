@@ -60,6 +60,13 @@
   #note { position:fixed; top:12px; left:12px; right:12px; z-index:40; padding:14px; border-radius:12px; font-size:18px; font-weight:700; background:#16452c; }
   #note.bad { background:#4a1630; }
   #duetList button { margin-top:8px; }
+  /* host setup (the host card inside the box lid) */
+  .tvs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0; }
+  .tvs button { font-size:16px; padding:12px 6px; background:#2a2445; border:2px solid transparent; }
+  .tvs button.on { border-color:var(--acc); }
+  #tvHow { text-align:right; font-size:16px; line-height:1.6; }
+  #tvHow ol { margin:6px 0; padding-inline-start:22px; }
+  .addr { direction:ltr; background:#2a2445; border-radius:8px; padding:8px; font-size:15px; word-break:break-all; margin:6px 0; }
   .abtns button.cut { opacity:.2; }
   .prow { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #2a2445; }
   .prow button { width:auto; padding:8px 14px; font-size:16px; }
@@ -75,6 +82,17 @@
 <div class="card hidden" id="vScan">
   <div class="big">📺 סרקו במצלמה את הקוד שעל מסך הטלוויזיה</div>
   <p class="mut">פתחו את המשחק בטלוויזיה, ואז סרקו את ה-QR שמופיע בה.</p>
+</div>
+
+<!-- host card: the evening starts here -->
+<div class="card hidden" id="vHost">
+  <div class="big">👑 אתה המנחה של הערב!</div>
+  <div class="mut">שני צעדים ומתחילים:</div>
+  <div class="big" style="font-size:19px;margin-top:14px">1. איזו טלוויזיה יש לכם?</div>
+  <div class="tvs" id="tvTypes"></div>
+  <div id="tvHow"></div>
+  <div class="big" style="font-size:19px;margin-top:14px">2. כשבטלוויזיה מופיע קוד QR:</div>
+  <button id="hostScan">📷 סרוק את הקוד שבטלוויזיה</button>
 </div>
 
 <!-- join -->
@@ -211,6 +229,10 @@ if (!myId) { myId = 'p' + Math.random().toString(36).slice(2, 10); ls.set('kq_id
 let myName = ls.get('kq_name');
 if (room && !ls.get('kq_at_' + room)) ls.set('kq_at_' + room, String(Date.now()));
 const joinedAt = +ls.get('kq_at_' + room) || Date.now();
+/* the host card (box lid) opens game.html?b=<box code>; this phone stays the host of that box */
+const boxParam = (new URLSearchParams(location.search).get('b') || '').toUpperCase();
+if (/^[A-Z0-9]{4,12}$/.test(boxParam)) ls.set('kq_box', boxParam);
+const myBox = ls.get('kq_box');
 
 /* ---------- shared state ---------- */
 let sb = null, chan = null, players = [];
@@ -258,7 +280,9 @@ function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function render() {
   const named = !!myName && inGame(myId);
   const iSing = amSinger();
-  show('vScan', !room);
+  show('vScan', !room && !myBox);
+  show('vHost', !room && !!myBox);
+  if (!room && myBox) renderHost();
   show('vJoin', !!room && !myName);
   const waiting = !!myName && !inGame(myId);
   show('vWait', waiting);
@@ -350,6 +374,47 @@ function renderAdmin() {
   for (const b of $('plist').querySelectorAll('button')) b.disabled = busy || !!game.on;
 }
 
+/* ---------- host setup: how to open the game on each kind of TV ---------- */
+const TV_URL = new URL('tv.html', location.href).href;
+const TV_TYPES = [
+  { id: 'samsung', name: 'סמסונג', steps: ['לחצו על כפתור הבית 🏠 בשלט ופתחו את "אפליקציות".',
+    'פתחו את אפליקציית KAROQUE.', 'אין אפליקציה? פתחו את הדפדפן "Internet" והקלידו את הכתובת:'], url: true },
+  { id: 'lg', name: 'LG', steps: ['לחצו על כפתור הבית 🏠 בשלט.', 'פתחו את "Web Browser" והקלידו את הכתובת:'], url: true },
+  { id: 'android', name: 'Android / Google TV', steps: ['(סוני, TCL, פיליפס, שיאומי, הייסנס ועוד)',
+    'התקינו מ-Google Play את הדפדפן החינמי "TV Bro".', 'פתחו אותו והקלידו את הכתובת:'], url: true },
+  { id: 'pc', name: 'מחשב ב-HDMI', steps: ['חברו מחשב לטלוויזיה בכבל HDMI.',
+    'פתחו בדפדפן את הכתובת, ולחצו F11 למסך מלא:'], url: true }
+];
+let tvType = '';
+
+function renderHost() {
+  const box = $('tvTypes');
+  if (!box.childElementCount) {
+    for (const t of TV_TYPES) {
+      const b = document.createElement('button');
+      b.textContent = t.name;
+      b.onclick = () => { tvType = t.id; renderHost(); };
+      box.append(b);
+    }
+  }
+  [...box.children].forEach((b, i) => b.classList.toggle('on', TV_TYPES[i].id === tvType));
+  const t = TV_TYPES.find(x => x.id === tvType), how = $('tvHow');
+  how.innerHTML = '';
+  if (!t) return;
+  const ol = document.createElement('ol');
+  t.steps.forEach(x => { const li = document.createElement('li'); li.textContent = x; ol.append(li); });
+  how.append(ol);
+  if (t.url) {
+    const a = document.createElement('div');
+    a.className = 'addr'; a.textContent = TV_URL.replace(/^https?:\/\//, '');
+    how.append(a);
+    const n = document.createElement('div');
+    n.className = 'mut';
+    n.textContent = 'בדפדפן השירים לא מתנגנים מ-USB: בוחרים שיר ושרים.';
+    how.append(n);
+  }
+}
+
 /* ---------- drawing a card ---------- */
 function renderDraw() {
   const d = game.draw, mine = d.pid === myId, deck = d.deck === 'q' ? '❓ חידון' : '🎵 שירים';
@@ -434,6 +499,8 @@ async function decodeFrame(v) {
 }
 
 function onScanned(t) {
+  const tvRoom = /game\.html\?(?:.*&)?r=([A-Z0-9]{5})/i.exec(String(t));
+  if (tvRoom) { closeScan(); location.href = 'game.html?r=' + tvRoom[1].toUpperCase(); return; }
   const m = CARD_RE.exec(String(t).trim());
   if (!m) { $('scanMsg').textContent = 'זה לא קלף של KAROQUE'; return; }
   closeScan();
@@ -856,6 +923,8 @@ function connect() {
       if (status === 'SUBSCRIBED') {
         await c.track({ name: myName, at: joinedAt });
         send('hello', { id: myId });
+        /* the TV must see us in the room first */
+        if (myBox) setTimeout(() => { if (!isAdmin()) send('card', { by: myId, id: 'HOST:' + myBox }); }, 2500);
       } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && chan === c) {
         chan = null;
         sb.removeChannel(c);
@@ -912,6 +981,7 @@ $('adminBtn').onclick = () => { adminOpen = !adminOpen; render(); };
 $('scanBtn').onclick = openScan;
 $('drawScan').onclick = openScan;
 $('scanClose').onclick = closeScan;
+$('hostScan').onclick = openScan;
 $('drawRandom').onclick = () => send('card', { by: myId, id: 'RANDOM' });
 $('stopBtn').onclick = stopSong;
 $('lobbyBtn').onclick = () => cmd('lobby');
