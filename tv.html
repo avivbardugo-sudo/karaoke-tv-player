@@ -79,6 +79,14 @@
   #kqv.on { display:block; }
   .screen, #strip, #mini, .corner, #conn { z-index:5; }
   #conn { position:absolute; top:2vh; left:2vw; font-size:1.4vw; color:var(--mut); }
+  /* cards */
+  #drawIcon { font-size:12vw; line-height:1; }
+  #drawText { font-size:3.8vw; font-weight:800; margin-top:3vh; }
+  #drawHint { font-size:2.2vw; margin-top:2.5vh; }
+  #qCat { font-size:2.2vw; color:var(--warn); margin-bottom:1vh; }
+  .ans.cut { opacity:.15; }
+  #flash { position:absolute; bottom:3vh; left:50%; transform:translateX(-50%); z-index:6; background:#d4a017; color:#2a1a00;
+           font-size:3vw; font-weight:900; padding:2vh 4vw; border-radius:3vw; box-shadow:0 1vh 4vh rgba(0,0,0,.6); white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -88,7 +96,7 @@
 <div class="screen" id="lobby">
   <div class="left">
     <div class="logo">🎤 KARO<span>QUE</span></div>
-    <div class="rules">כל אחד בתורו עונה על שאלה בטלפון.<br>נכון: +1. טעות או שתיקה: −1, ושרים שיר!<br>שיר עם ציון 80 ומעלה מציל את הנקודה. הקהל מצביע 👍 / 👎.</div>
+    <div class="rules">כל אחד בתורו שולף קלף ❓ חידון, סורק אותו בטלפון ועונה.<br>נכון: +1. טעות או שתיקה: −1 – שולפים קלף 🎵 שירים ושרים!<br>שיר עם ציון 80 ומעלה מציל את הנקודה. הקהל מצביע 👍 / 👎.</div>
     <div class="chips" id="chips"></div>
     <div class="mut" id="adminLine" style="font-size:1.8vw;margin-top:2vh"></div>
   </div>
@@ -98,7 +106,14 @@
   </div>
 </div>
 
+<div class="screen hidden" id="drawScr">
+  <div id="drawIcon"></div>
+  <div id="drawText"></div>
+  <div class="mut" id="drawHint"></div>
+</div>
+
 <div class="screen hidden" id="question">
+  <div id="qCat"></div>
   <div id="qHead"></div>
   <div id="qText"></div>
   <div id="qAns"></div>
@@ -145,6 +160,7 @@
 </div>
 
 <div id="mini"></div>
+<div id="flash" class="hidden"></div>
 <div class="corner hidden" id="corner"><div class="qr" id="qrSmall"></div><div>להצטרפות · <b class="roomCode"></b></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -157,7 +173,7 @@
 const SB_URL = 'https://vifemcedezouvuayplun.supabase.co';
 const SB_KEY = 'sb_publishable_QN23d4WZsTSTAsiB-lWCDQ_9Y1DBFdT';
 const PASS = 80, METER_W = 0.79, ANSWER_S = 30, REVEAL_MS = 3500, RESULT_MS = 8000;
-const ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 4000, FREE_RESULT_MS = 15000;
+const ADMIN_GRACE_MS = 60000, STOP_GRACE_MS = 4000, FREE_RESULT_MS = 15000, DUET_WAIT_MS = 6000, FLASH_MS = 4000;
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
 const ls = {
@@ -181,9 +197,12 @@ let sb = null, chan = null, players = [], adminGoneAt = 0, timer = 0, tick = 0;
 let game = {
   phase: 'lobby', admin: ls.get('kq_tv_admin'), song: 0, singer: '', singerName: '', dur: 0, result: null,
   on: false, order: [], names: {}, scores: {}, best: {}, turnNo: 0, turns: 15, cut: 90,
-  q: null, reveal: null, songTitle: '', penalty: false
+  q: null, reveal: null, songTitle: '', penalty: false, draw: null, cat: null, used: [], partner: ''
 };
 let live = {}, correctIdx = -1, bank = [], qNo = 0;
+/* printed cards (cards.json): id -> category, question-bank cats, USB song tags */
+let cards = {}, catBank = {}, songTags = [];
+let liveBy = {}, results = {}, duetTimer = 0, flashText = '', flashTimer = 0;
 let usb = [], usedSongs = new Set(), videoOn = false;
 /* inside the Samsung app this page runs in the app itself (TVs do not draw iframes):
    it reads the USB drive and plays the songs on its own <video>. */
@@ -205,6 +224,7 @@ function set(patch) {
 /* numbers inside Hebrew text: keep the sign on the left ("-1", "+17") */
 const ltr = x => '\u2066' + x + '\u2069';
 const signed = n => ltr((n > 0 ? '+' : '') + n);
+const iso = x => '\u2068' + x + '\u2069';   /* names / "50:50" inside Hebrew text */
 
 function later(fn, ms) { clearTimeout(timer); timer = setTimeout(fn, ms); }
 
@@ -276,10 +296,16 @@ function stopVideo() {
   videoOn = false;
 }
 
-function pickSong() {
+function pickSong(cat) {
   if (!usb.length) return null;
   let pool = usb.filter(s => !usedSongs.has(s.id));
   if (!pool.length) { usedSongs.clear(); pool = usb; }
+  /* songs tagged with the card's category; none tagged yet: any song */
+  const tags = songTags.filter(t => t && t.match && (t.cats || []).indexOf(cat) >= 0);
+  if (tags.length) {
+    const c = pool.filter(s => tags.some(t => s.title.indexOf(t.match) >= 0));
+    if (c.length) pool = c;
+  }
   const s = pool[Math.floor(Math.random() * pool.length)];
   usedSongs.add(s.id);
   return s;
@@ -293,12 +319,34 @@ function loadBank() {
     .catch(() => { bank = []; });
 }
 
-function pickQuestion() {
+function loadCards() {
+  fetch(base + 'cards.json', { cache: 'no-cache' })
+    .then(r => r.json())
+    .then(j => { cards = j.cards || {}; catBank = j.bank || {}; songTags = j.songs || []; })
+    .catch(() => { cards = {}; });
+}
+
+function catInfo(id) {
+  const c = cards[id];
+  return c ? { id, he: c.he, icon: c.icon } : null;
+}
+
+function randomCat(deck) {
+  const ids = Object.keys(cards).filter(k => cards[k].deck === deck && !cards[k].special);
+  return ids.length ? ids[Math.floor(Math.random() * ids.length)] : '';
+}
+
+function pickQuestion(cat) {
   if (!bank.length) return null;
   let seen = [];
   try { seen = JSON.parse(ls.get('kq_seen') || '[]'); } catch (e) { seen = []; }
   let pool = bank.filter(q => seen.indexOf(q.id) < 0);
   if (!pool.length) { seen = []; pool = bank; }
+  const want = catBank[cat];
+  if (want) {
+    const c = pool.filter(q => want.indexOf(q.cat) >= 0);
+    if (c.length) pool = c;
+  }
   const q = pool[Math.floor(Math.random() * pool.length)];
   seen.push(q.id);
   ls.set('kq_seen', JSON.stringify(seen.slice(-2000)));
@@ -322,7 +370,7 @@ function startGame(turns, cut, secs) {
   const scores = {};
   order.forEach(id => { scores[id] = 0; });
   usedSongs.clear();
-  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, ptr: 0, pending: [], rejected: [],
+  game = { ...game, on: true, order, names, scores, best: {}, turnNo: 0, ptr: 0, pending: [], rejected: [], used: [], partner: '',
     turns: turns || 15, cut: cut || 0,
     secs: [10, 15, 20, 30].indexOf(secs) >= 0 ? secs : ANSWER_S };
   nextTurn();
@@ -335,19 +383,26 @@ function nextTurn() {
   const len = game.order.length;
   for (let k = 0; k < len; k++) {
     const i = ((game.ptr || 0) + k) % len, id = game.order[i];
-    if (present(id)) { game.ptr = (i + 1) % len; ask(id); return; }
+    if (present(id)) { game.ptr = (i + 1) % len; draw(id, 'q'); return; }
   }
   set({ on: false, phase: 'lobby' });          /* everyone left */
 }
 
-function ask(pid) {
-  const src = pickQuestion();
+/* the player draws a card from the quiz deck ('q') or, after a mistake, the song deck ('m') */
+function draw(pid, deck) {
+  clearInterval(tick);
+  set({ phase: 'draw', draw: { pid, name: nameOf(pid), deck, duet: false, partner: '', partnerName: '' },
+    cat: null, q: null, reveal: null, partner: '' });
+}
+
+function ask(pid, cat) {
+  const src = pickQuestion(cat);
   if (!src) { set({ phase: 'lobby', on: false }); $('conn').textContent = 'אין שאלות (questions.json)'; return; }
   const answers = shuffle(src.a.map((t, i) => ({ t, ok: i === 0 })));
   correctIdx = answers.findIndex(x => x.ok);
   qNo++;
-  set({ phase: 'question', reveal: null,
-    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: game.secs || ANSWER_S, by: pid, byName: nameOf(pid) } });
+  set({ phase: 'question', reveal: null, cat: catInfo(cat),
+    q: { n: qNo, text: src.q, answers: answers.map(x => x.t), left: game.secs || ANSWER_S, by: pid, byName: nameOf(pid), cut: [], extra: 0 } });
   clearInterval(tick);
   tick = setInterval(() => {
     if (game.phase !== 'question') { clearInterval(tick); return; }
@@ -365,26 +420,31 @@ function judge(idx) {
   const pid = game.q.by, ok = idx === correctIdx;
   const scores = { ...game.scores, [pid]: (game.scores[pid] || 0) + (ok ? 1 : -1) };
   set({ phase: 'reveal', scores, reveal: { chosen: idx, correct: correctIdx, ok } });
-  later(() => { if (ok) { set({ turnNo: game.turnNo + 1 }); nextTurn(); } else penalty(pid); }, REVEAL_MS);
+  later(() => { if (ok) { set({ turnNo: game.turnNo + 1 }); nextTurn(); } else draw(pid, 'm'); }, REVEAL_MS);
 }
 
-function penalty(pid) {
-  const s = pickSong();
-  if (!s) { startSong(pid, null); return; }
+function singerLabel(pid, partner) {
+  return partner ? nameOf(pid) + ' ו' + nameOf(partner) : nameOf(pid);
+}
+
+function penalty(pid, cat) {
+  const partner = (game.draw && game.draw.partner) || '';
+  const s = pickSong(cat);
+  if (!s) { startSong(pid, null, partner); return; }
   /* the wheel of fortune draws the song, then it plays */
-  set({ phase: 'wheel', singer: pid, singerName: nameOf(pid), songTitle: '' });
+  set({ phase: 'wheel', singer: pid, partner, singerName: singerLabel(pid, partner), songTitle: '', cat: catInfo(cat) });
   spinWheel(s.title, () => {
     set({ songTitle: s.title });
-    later(() => startSong(pid, s), WHEEL_SHOW_MS);
+    later(() => startSong(pid, s, partner), WHEEL_SHOW_MS);
   });
 }
 
-function startSong(pid, s) {
+function startSong(pid, s, partner) {
   stopWheel();
-  live = {};
+  live = {}; liveBy = {}; results = {};
   playSong(s);                                  /* before set(): the first render is already clear */
-  set({ phase: 'song', song: game.song + 1, singer: pid, singerName: nameOf(pid), dur: 0, result: null,
-    songTitle: s ? s.title : '', penalty: true });
+  set({ phase: 'song', song: game.song + 1, singer: pid, partner: partner || '', singerName: singerLabel(pid, partner),
+    dur: 0, result: null, songTitle: s ? s.title : '', penalty: true });
   if (game.cut) later(endSong, game.cut * 1000 + 6000);   /* + calibration and countdown */
 }
 
@@ -486,7 +546,7 @@ function endSong() {
   const song = game.song;
   send('stop', { song });
   /* no result from the singer's phone: the point is not saved */
-  later(() => { if (game.phase === 'song' && game.song === song) onResult({ song, result: null }); }, STOP_GRACE_MS);
+  later(() => { if (game.phase === 'song' && game.song === song) finishSong(); }, STOP_GRACE_MS);
 }
 
 function onVideoEnded() {
@@ -494,10 +554,28 @@ function onVideoEnded() {
   else if (game.phase === 'closing') showScores();
 }
 
+/* each singing phone sends its result; a duet waits for both (or a few seconds) */
 function onResult(p) {
   if (!p || p.song !== game.song || game.phase !== 'song') return;
+  if (p.result) results[p.by || game.singer] = p.result;
+  if (Object.keys(results).length >= (game.partner ? 2 : 1)) { finishSong(); return; }
+  clearTimeout(duetTimer);
+  duetTimer = setTimeout(finishSong, DUET_WAIT_MS);
+}
+
+function finishSong() {
+  clearTimeout(duetTimer);
+  if (game.phase !== 'song') return;
   stopVideo();
-  const r = p.result, pid = game.singer;
+  const pid = game.singer, rs = Object.values(results);
+  let r = null;
+  if (rs.length) {
+    const main = results[pid] || rs[0];
+    /* duet: the average of both singers' meters, the audience counted once */
+    const meter = Math.round(rs.reduce((t, x) => t + x.meter, 0) / rs.length);
+    r = rs.length === 1 ? main
+      : { ...main, meter, total: Math.round(Math.max(0, Math.min(100, meter * METER_W + main.aud))), duet: true };
+  }
   const patch = { phase: 'result', result: r };
   if (game.penalty && game.on) {
     const best = { ...game.best };
@@ -524,8 +602,95 @@ function showScores() {
 }
 
 function toLobby() {
-  clearInterval(tick); clearTimeout(timer); stopVideo(); stopWheel();
-  set({ phase: 'lobby', on: false, result: null, q: null, reveal: null });
+  clearInterval(tick); clearTimeout(timer); clearTimeout(duetTimer); stopVideo(); stopWheel();
+  set({ phase: 'lobby', on: false, result: null, q: null, reveal: null, draw: null, partner: '' });
+}
+
+/* ---------- cards scanned on the phones ---------- */
+function ack(to, ok, text) { send('cardAck', { to, ok, text }); }
+
+function flash(text) {
+  flashText = text;
+  render();
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { flashText = ''; render(); }, FLASH_MS);
+}
+
+function onCard(p) {
+  if (!p || !p.by || !p.id) return;
+  const by = p.by, id = String(p.id);
+  if (id.indexOf('HOST:') === 0) {               /* the host card inside the box lid */
+    if (!present(by)) return;
+    adminUsed = true; adminGoneAt = 0;
+    set({ admin: by });
+    ack(by, true, '👑 אתה המנחה!');
+    flash('👑 ' + iso(nameOf(by)) + ' מנחה את המשחק');
+    return;
+  }
+  if (!game.on || game.order.indexOf(by) < 0) { ack(by, false, 'הקלפים עובדים רק בזמן משחק'); return; }
+  const c = id === 'RANDOM' ? null : cards[id];
+  if (id !== 'RANDOM' && !c) { ack(by, false, 'קלף לא מוכר'); return; }
+  if (c && c.special) { useSpecial(by, id, c); return; }
+  /* a category card (or the 🎲 button) from the player who draws now */
+  const d = game.draw;
+  if (game.phase !== 'draw' || !d) { ack(by, false, 'עכשיו לא שולפים קלף'); return; }
+  if (by !== d.pid && !(id === 'RANDOM' && by === game.admin)) { ack(by, false, 'התור של ' + d.name + ' לשלוף'); return; }
+  if (c && c.deck !== d.deck) {
+    ack(by, false, d.deck === 'q' ? 'זה קלף שירים – שלוף קלף ❓ חידון' : 'זה קלף חידון – שלוף קלף 🎵 שירים');
+    return;
+  }
+  if (d.duet && !d.partner) { ack(by, false, 'קודם בחר שותף לדואט'); return; }
+  const cat = c ? id : randomCat(d.deck);
+  ack(by, true, '');
+  if (d.deck === 'q') ask(d.pid, cat); else penalty(d.pid, cat);
+}
+
+/* special cards: one use per game, by whoever holds the card, at its moment */
+function useSpecial(by, id, c) {
+  const used = game.used || [], d = game.draw, q = game.q;
+  if (used.indexOf(id) >= 0) { ack(by, false, 'הקלף הזה כבר נוצל במשחק הזה'); return; }
+  if (id === 'S03' || id === 'S04') {           /* 50:50, double time: during your own question */
+    if (game.phase !== 'question' || !q || q.by !== by) { ack(by, false, 'משתמשים בקלף הזה כשהשאלה שלך על המסך'); return; }
+    if (id === 'S03') {
+      const wrong = shuffle([0, 1, 2, 3].filter(i => i !== correctIdx && q.cut.indexOf(i) < 0)).slice(0, 2);
+      game.q = { ...q, cut: q.cut.concat(wrong) };
+    } else {
+      const add = game.secs || ANSWER_S;
+      game.q = { ...q, left: q.left + add, extra: q.extra + add };
+    }
+    set({ used: used.concat(id), q: game.q });
+  } else {                                       /* golden mic, duet: after a mistake, before your song */
+    if (game.phase !== 'draw' || !d || d.deck !== 'm' || d.pid !== by) { ack(by, false, 'משתמשים בקלף הזה אחרי טעות, לפני השיר שלך'); return; }
+    if (id === 'S01') {
+      set({ used: used.concat(id), phase: 'result', singer: by, partner: '', singerName: nameOf(by), result: { gold: true },
+        scores: { ...game.scores, [by]: (game.scores[by] || 0) + 1 }, penalty: true });
+      later(() => { set({ turnNo: game.turnNo + 1 }); nextTurn(); }, RESULT_MS);
+    } else {
+      if (d.duet) { ack(by, false, 'כבר יש דואט בתור הזה'); return; }
+      set({ used: used.concat(id), draw: { ...d, duet: true } });
+    }
+  }
+  ack(by, true, c.icon + ' ' + c.he + '!');
+  flash(c.icon + ' ' + iso(c.he) + ' · ' + iso(nameOf(by)));
+}
+
+function onPartner(p) {
+  const d = game.draw;
+  if (!p || game.phase !== 'draw' || !d || !d.duet || d.partner || p.by !== d.pid) return;
+  if (p.target === d.pid || game.order.indexOf(p.target) < 0 || !present(p.target)) return;
+  set({ draw: { ...d, partner: p.target, partnerName: nameOf(p.target) } });
+  flash('🎭 דואט · ' + iso(d.name) + ' + ' + iso(nameOf(p.target)));
+}
+
+/* live numbers from one singer, or the average of both duet singers */
+function liveAgg() {
+  const all = Object.values(liveBy).filter(x => x.song === game.song);
+  if (!all.length) return {};
+  const main = liveBy[game.singer] || all[0];
+  if (all.length === 1) return main;
+  const meter = Math.round(all.reduce((t, x) => t + (x.meter || 0), 0) / all.length);
+  return { song: game.song, stage: all.some(x => x.stage === 'sing') ? 'sing' : main.stage, meter,
+    aud: main.aud || 0, up: main.up, down: main.down, total: Math.round(Math.max(0, Math.min(100, meter + (main.aud || 0)))) };
 }
 
 /* ---------- admin ---------- */
@@ -553,7 +718,8 @@ function onCmd(p) {
     const t = players.find(x => x.id === p.target);
     if (!t || game.on || game.phase === 'song') return;
     live = {};
-    set({ phase: 'song', song: game.song + 1, singer: t.id, singerName: t.name, dur: +p.dur || 0, result: null, penalty: false, songTitle: '' });
+    liveBy = {}; results = {};
+    set({ phase: 'song', song: game.song + 1, singer: t.id, partner: '', singerName: t.name, dur: +p.dur || 0, result: null, penalty: false, songTitle: '' });
     break;
   }
   case 'stop':
@@ -643,6 +809,9 @@ function render() {
   document.body.classList.toggle('clear', clear);
   if (clear !== lastClear) { lastClear = clear; toApp({ kq: 'clear', on: clear }); }
   show('lobby', ph === 'lobby');
+  show('drawScr', ph === 'draw');
+  show('flash', !!flashText && !clear);
+  $('flash').textContent = flashText;
   show('question', ph === 'question' || ph === 'reveal');
   show('wheelScr', ph === 'wheel');
   show('song', ph === 'song');
@@ -667,25 +836,38 @@ function render() {
     + ((game.pending || []).length ? '   ·   ⏳ ממתינים לאישור: ' + game.pending.map(x => x.name).join(', ') : '')
     : '';
 
+  if (ph === 'draw' && game.draw) {
+    const d = game.draw;
+    $('drawIcon').textContent = d.deck === 'q' ? '❓' : '🎵';
+    $('drawText').textContent = d.deck === 'q'
+      ? '🎯 ' + d.name + ' – שלוף/י קלף חידון וסרוק/י בטלפון'
+      : '🎤 ' + d.name + ' – שלוף/י קלף שירים וסרוק/י בטלפון';
+    $('drawHint').textContent = d.deck === 'q' ? 'יש לכם ✂️ 50:50 או ⏱️ זמן כפול? סורקים אותם כשהשאלה על המסך'
+      : d.duet ? (d.partner ? '🎭 דואט עם ' + d.partnerName : '🎭 דואט! בוחרים שותף בטלפון…')
+      : 'יש לך 🎙️ מיקרופון הזהב או 🎭 דואט? סורקים אותו עכשיו';
+  }
+
   if ((ph === 'question' || ph === 'reveal') && game.q) {
     const q = game.q, rv = game.reveal;
+    $('qCat').textContent = game.cat ? game.cat.icon + ' ' + game.cat.he : '';
     $('qHead').textContent = '🎯 התור של ' + q.byName;
     $('qText').textContent = q.text;
     $('qAns').innerHTML = '';
     q.answers.forEach((t, i) => {
       const d = document.createElement('div');
-      d.className = 'ans' + (rv ? (i === rv.correct ? ' good' : i === rv.chosen ? ' bad' : '') : '');
+      d.className = 'ans' + (rv ? (i === rv.correct ? ' good' : i === rv.chosen ? ' bad' : '') : '') + ((q.cut || []).indexOf(i) >= 0 ? ' cut' : '');
       d.innerHTML = '<b>' + 'אבגד'[i] + '</b>';
-      d.append(document.createTextNode(t));
+      d.append(document.createTextNode((q.cut || []).indexOf(i) >= 0 ? '✂️' : t));
       $('qAns').append(d);
     });
-    $('qTimer').textContent = rv ? '' : q.left;
+    $('qTimer').textContent = rv ? '' : (q.extra ? '⏱️ ' : '') + q.left;
     $('qTimer').classList.toggle('low', !rv && q.left <= 5);
     $('verdict').textContent = !rv ? '' : rv.ok ? '✅ נכון! ' + signed(1) :
       (rv.chosen < 0 ? '⏰ נגמר הזמן! ' : '❌ טעות! ') + signed(-1) + ' · עכשיו ' + q.byName + ' שר/ה!';
   }
 
-  if (ph === 'wheel') $('wheelCap').textContent = game.songTitle ? '🎵 ' + game.songTitle : '🎡 מגרילים שיר ל' + game.singerName + '…';
+  if (ph === 'wheel') $('wheelCap').textContent = game.songTitle ? '🎵 ' + game.songTitle
+    : (game.cat ? game.cat.icon + ' ' + game.cat.he + ' · ' : '') + '🎡 מגרילים שיר ל' + game.singerName + '…';
 
   if (ph === 'song') {
     const on = live.song === game.song;
@@ -707,11 +889,16 @@ function render() {
   if (ph === 'result') {
     const r = game.result;
     $('rName').textContent = '🎤 ' + game.singerName;
-    if (r) {
+    if (r && r.gold) {
+      $('rScore').textContent = '🎙️';
+      $('rScore').style.color = '';
+      $('rVerdict').textContent = 'מיקרופון הזהב – הנקודה ניצלה! ' + signed(1);
+      $('rSplit').textContent = '';
+    } else if (r) {
       $('rScore').textContent = r.total;
       $('rScore').style.color = r.total >= PASS ? 'var(--ok)' : 'var(--acc)';
       $('rVerdict').textContent = r.total >= PASS ? '⭐ הנקודה ניצלה! ' + signed(1) : '🙈 הנקודה לא ניצלה';
-      $('rSplit').textContent = `שירה ${Math.round(r.meter * METER_W)} · קהל ${signed(Math.round(r.aud))} (👍 ${r.up} 👎 ${r.down})`;
+      $('rSplit').textContent = (r.duet ? '🎭 דואט · ' : '') + `שירה ${Math.round(r.meter * METER_W)} · קהל ${signed(Math.round(r.aud))} (👍 ${r.up} 👎 ${r.down})`;
     } else {
       $('rScore').textContent = '—';
       $('rScore').style.color = 'var(--mut)';
@@ -756,7 +943,14 @@ function connect() {
     .on('broadcast', { event: 'cmd' }, ({ payload }) => onCmd(payload))
     .on('broadcast', { event: 'answer' }, ({ payload }) => onAnswer(payload))
     .on('broadcast', { event: 'result' }, ({ payload }) => onResult(payload))
-    .on('broadcast', { event: 'live' }, ({ payload }) => { if (payload.song === game.song) { live = payload; render(); } })
+    .on('broadcast', { event: 'live' }, ({ payload }) => {
+      if (payload.song !== game.song) return;
+      liveBy[payload.by || game.singer] = payload;
+      live = liveAgg();
+      render();
+    })
+    .on('broadcast', { event: 'card' }, ({ payload }) => onCard(payload))
+    .on('broadcast', { event: 'partner' }, ({ payload }) => onPartner(payload))
     .on('broadcast', { event: 'hello' }, () => send('game', game))
     .subscribe(async status => {
       if (status === 'SUBSCRIBED') {
@@ -776,6 +970,7 @@ $$('.roomCode').forEach(el => { el.textContent = room; });
 drawQr($('qrBig'));
 drawQr($('qrSmall'));
 loadBank();
+loadCards();
 toApp({ kq: 'hello' });
 if (inApp) {
   diag('start, base ' + base);

@@ -1,0 +1,400 @@
+{
+ "version": 1,
+ "note": "card id -> category; bank: question-bank cats per quiz card; songs: [{match: text in USB file name, cats: [M..]}]",
+ "cards": {
+  "M01": {
+   "deck": "m",
+   "he": "פופ",
+   "en": "Pop",
+   "icon": "🎤"
+  },
+  "M02": {
+   "deck": "m",
+   "he": "רוק",
+   "en": "Rock",
+   "icon": "🎸"
+  },
+  "M03": {
+   "deck": "m",
+   "he": "דיסקו ופאנק",
+   "en": "Disco & Funk",
+   "icon": "🪩"
+  },
+  "M04": {
+   "deck": "m",
+   "he": "היפ הופ וראפ",
+   "en": "Hip-Hop & Rap",
+   "icon": "🎧"
+  },
+  "M05": {
+   "deck": "m",
+   "he": "R&B וסול",
+   "en": "R&B & Soul",
+   "icon": "💜"
+  },
+  "M06": {
+   "deck": "m",
+   "he": "בלוז וג'אז",
+   "en": "Blues & Jazz",
+   "icon": "🎷"
+  },
+  "M07": {
+   "deck": "m",
+   "he": "קאנטרי ופולק",
+   "en": "Country & Folk",
+   "icon": "🤠"
+  },
+  "M08": {
+   "deck": "m",
+   "he": "רגאיי וסקא",
+   "en": "Reggae & Ska",
+   "icon": "🌴"
+  },
+  "M09": {
+   "deck": "m",
+   "he": "אולדיז",
+   "en": "Oldies 50s–60s",
+   "icon": "📻"
+  },
+  "M10": {
+   "deck": "m",
+   "he": "שנות ה-70",
+   "en": "The 70s",
+   "icon": "🕺"
+  },
+  "M11": {
+   "deck": "m",
+   "he": "שנות ה-80",
+   "en": "The 80s",
+   "icon": "📼"
+  },
+  "M12": {
+   "deck": "m",
+   "he": "שנות ה-90",
+   "en": "The 90s",
+   "icon": "💿"
+  },
+  "M13": {
+   "deck": "m",
+   "he": "שנות ה-2000",
+   "en": "The 2000s",
+   "icon": "📱"
+  },
+  "M14": {
+   "deck": "m",
+   "he": "דיסני וסרטים",
+   "en": "Disney & Movies",
+   "icon": "🏰"
+  },
+  "M15": {
+   "deck": "m",
+   "he": "מחזות זמר",
+   "en": "Musicals",
+   "icon": "🎭"
+  },
+  "M16": {
+   "deck": "m",
+   "he": "אירוויזיון",
+   "en": "Eurovision",
+   "icon": "🌍"
+  },
+  "M17": {
+   "deck": "m",
+   "he": "בלדות ושירי אהבה",
+   "en": "Ballads & Love Songs",
+   "icon": "❤️"
+  },
+  "M19": {
+   "deck": "m",
+   "he": "להיטי מסיבות",
+   "en": "Party Anthems",
+   "icon": "🎉"
+  },
+  "M20": {
+   "deck": "m",
+   "he": "פופ ישראלי",
+   "en": "Israeli Pop",
+   "icon": "🇮🇱"
+  },
+  "M21": {
+   "deck": "m",
+   "he": "רוק ישראלי",
+   "en": "Israeli Rock",
+   "icon": "🇮🇱"
+  },
+  "M22": {
+   "deck": "m",
+   "he": "ים-תיכוני ומזרחי",
+   "en": "Mediterranean",
+   "icon": "🇮🇱"
+  },
+  "M23": {
+   "deck": "m",
+   "he": "ישראלי נוסטלגי",
+   "en": "Israeli Classics",
+   "icon": "🇮🇱"
+  },
+  "M24": {
+   "deck": "m",
+   "he": "היפ הופ וראפ ישראלי",
+   "en": "Israeli Hip-Hop",
+   "icon": "🇮🇱"
+  },
+  "M25": {
+   "deck": "m",
+   "he": "ישראלי אלטרנטיבי",
+   "en": "Israeli Alternative",
+   "icon": "🇮🇱"
+  },
+  "Q01": {
+   "deck": "q",
+   "he": "היסטוריה עולמית",
+   "en": "World History",
+   "icon": "🏛️"
+  },
+  "Q02": {
+   "deck": "q",
+   "he": "היסטוריה ישראלית",
+   "en": "Israeli History",
+   "icon": "🇮🇱"
+  },
+  "Q03": {
+   "deck": "q",
+   "he": "גאוגרפיה עולמית",
+   "en": "World Geography",
+   "icon": "🗺️"
+  },
+  "Q04": {
+   "deck": "q",
+   "he": "גאוגרפיה וידיעת הארץ",
+   "en": "Land of Israel",
+   "icon": "🇮🇱"
+  },
+  "Q05": {
+   "deck": "q",
+   "he": "מדע וטכנולוגיה",
+   "en": "Science & Tech",
+   "icon": "🔬"
+  },
+  "Q06": {
+   "deck": "q",
+   "he": "טבע ובעלי חיים",
+   "en": "Nature & Animals",
+   "icon": "🦁"
+  },
+  "Q07": {
+   "deck": "q",
+   "he": "חלל ואסטרונומיה",
+   "en": "Space",
+   "icon": "🚀"
+  },
+  "Q08": {
+   "deck": "q",
+   "he": "גוף האדם ורפואה",
+   "en": "Human Body",
+   "icon": "🫀"
+  },
+  "Q09": {
+   "deck": "q",
+   "he": "ספורט",
+   "en": "Sports",
+   "icon": "⚽"
+  },
+  "Q10": {
+   "deck": "q",
+   "he": "קולנוע",
+   "en": "Movies",
+   "icon": "🎬"
+  },
+  "Q11": {
+   "deck": "q",
+   "he": "טלוויזיה וסדרות",
+   "en": "TV Series",
+   "icon": "📺"
+  },
+  "Q12": {
+   "deck": "q",
+   "he": "מוזיקה",
+   "en": "Music",
+   "icon": "🎵"
+  },
+  "Q13": {
+   "deck": "q",
+   "he": "ספרות ושפה",
+   "en": "Books & Language",
+   "icon": "📚"
+  },
+  "Q14": {
+   "deck": "q",
+   "he": "אמנות ותרבות",
+   "en": "Art & Culture",
+   "icon": "🎨"
+  },
+  "Q15": {
+   "deck": "q",
+   "he": "תנ\"ך ומסורת ישראל",
+   "en": "Bible & Tradition",
+   "icon": "🇮🇱"
+  },
+  "Q16": {
+   "deck": "q",
+   "he": "אוכל וקולינריה",
+   "en": "Food",
+   "icon": "🍕"
+  },
+  "Q17": {
+   "deck": "q",
+   "he": "מנהיגים והיסטוריה פוליטית",
+   "en": "Leaders & Politics",
+   "icon": "🗳️"
+  },
+  "Q18": {
+   "deck": "q",
+   "he": "כלכלה ועסקים",
+   "en": "Business",
+   "icon": "💰"
+  },
+  "Q19": {
+   "deck": "q",
+   "he": "משחקים ופנאי",
+   "en": "Games & Hobbies",
+   "icon": "🎲"
+  },
+  "Q20": {
+   "deck": "q",
+   "he": "לוגיקה וחידות",
+   "en": "Logic & Puzzles",
+   "icon": "🧩"
+  },
+  "Q21": {
+   "deck": "q",
+   "he": "מיתולוגיה ואגדות",
+   "en": "Myths & Legends",
+   "icon": "🐉"
+  },
+  "Q22": {
+   "deck": "q",
+   "he": "אופנה ועיצוב",
+   "en": "Fashion & Design",
+   "icon": "👗"
+  },
+  "Q23": {
+   "deck": "q",
+   "he": "רכב ותחבורה",
+   "en": "Cars & Transport",
+   "icon": "🚗"
+  },
+  "Q24": {
+   "deck": "q",
+   "he": "דגלים וסמלים",
+   "en": "Flags & Symbols",
+   "icon": "🏳️"
+  },
+  "S01": {
+   "deck": "m",
+   "he": "מיקרופון הזהב",
+   "en": "Golden Mic",
+   "icon": "🎙️",
+   "special": true
+  },
+  "S02": {
+   "deck": "m",
+   "he": "דואט",
+   "en": "Duet",
+   "icon": "🎭",
+   "special": true
+  },
+  "S03": {
+   "deck": "q",
+   "he": "50:50",
+   "en": "Fifty-Fifty",
+   "icon": "✂️",
+   "special": true
+  },
+  "S04": {
+   "deck": "q",
+   "he": "זמן כפול",
+   "en": "Double Time",
+   "icon": "⏱️",
+   "special": true
+  }
+ },
+ "bank": {
+  "Q01": [
+   "היסטוריה"
+  ],
+  "Q02": [
+   "ישראל",
+   "היסטוריה"
+  ],
+  "Q03": [
+   "גאוגרפיה"
+  ],
+  "Q04": [
+   "ישראל",
+   "גאוגרפיה"
+  ],
+  "Q05": [
+   "מדע וטבע"
+  ],
+  "Q06": [
+   "מדע וטבע"
+  ],
+  "Q07": [
+   "מדע וטבע"
+  ],
+  "Q08": [
+   "מדע וטבע"
+  ],
+  "Q09": [
+   "ספורט"
+  ],
+  "Q10": [
+   "קולנוע וטלוויזיה"
+  ],
+  "Q11": [
+   "קולנוע וטלוויזיה"
+  ],
+  "Q12": [
+   "מוזיקה עולמית",
+   "מוזיקה ישראלית"
+  ],
+  "Q13": [
+   "ספרות"
+  ],
+  "Q14": [
+   "אמנות"
+  ],
+  "Q15": [
+   "ישראל"
+  ],
+  "Q16": [
+   "כללי"
+  ],
+  "Q17": [
+   "כללי"
+  ],
+  "Q18": [
+   "כללי"
+  ],
+  "Q19": [
+   "כללי"
+  ],
+  "Q20": [
+   "כללי"
+  ],
+  "Q21": [
+   "כללי"
+  ],
+  "Q22": [
+   "כללי"
+  ],
+  "Q23": [
+   "כללי"
+  ],
+  "Q24": [
+   "כללי"
+  ]
+ },
+ "songs": []
+}
